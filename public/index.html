@@ -1,0 +1,152 @@
+#public/index.html
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>ChatGPT AI - Telegram Mini App</title>
+    
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="css/style.css">
+
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        gpt: { bg: '#050509', panel: 'rgba(20, 20, 35, 0.85)', accent: '#d946ef' }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Orbitron', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    animation: { 'slide-in': 'slideIn 0.3s ease-out forwards' },
+                    keyframes: {
+                        slideIn: {
+                            '0%': { transform: 'translateX(-100%)', opacity: '0' },
+                            '100%': { transform: 'translateX(0)', opacity: '1' },
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="font-sans overflow-hidden flex">
+
+    <div id="canvas-container"></div>
+    <input type="file" id="file-upload" accept="image/*" class="hidden">
+
+    <!-- Sidebar -->
+    <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-[#0a0a12]/95 backdrop-blur-xl border-r border-white/10 transform -translate-x-full md:translate-x-0 sidebar-transition flex flex-col shadow-2xl">
+        <div class="p-4 flex items-center justify-between border-b border-white/5 h-16 shrink-0">
+            <button id="new-chat-btn" class="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg py-3 px-4 text-sm text-left text-white transition-all flex items-center gap-2 group">
+                <i class="fa-solid fa-plus text-gray-400 group-hover:text-[#d946ef]"></i>
+                <span class="font-medium">Yangi Chat</span>
+            </button>
+            <button id="close-sidebar" class="md:hidden p-2 text-gray-400 hover:text-white ml-2">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto p-3 space-y-2" id="chat-history-list">
+            <div class="text-center text-gray-500 text-xs mt-10">Tarix yuklanmoqda...</div>
+        </div>
+
+        <!-- USER PROFILE SECTION -->
+        <div class="p-4 border-t border-white/5 bg-black/20 shrink-0">
+            <button id="clear-history" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-white/5 text-sm transition-colors">
+                <i class="fa-solid fa-trash-can"></i>
+                <span>Tarixni tozalash</span>
+            </button>
+            <div class="flex items-center gap-3 px-3 py-3 mt-2 border-t border-white/5 pt-3">
+                <div class="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-cyan-500 p-[1px]">
+                    <!-- ID QO'SHILDI: sidebar-user-avatar -->
+                    <img id="sidebar-user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=User" class="rounded-full bg-black w-full h-full object-cover" alt="User">
+                </div>
+                <!-- ID QO'SHILDI: sidebar-user-name -->
+                <div id="sidebar-user-name" class="text-xs font-medium text-gray-300">Foydalanuvchi</div>
+            </div>
+        </div>
+    </aside>
+
+    <div id="sidebar-overlay" class="fixed inset-0 bg-black/80 z-40 hidden backdrop-blur-sm"></div>
+
+    <!-- Main App -->
+    <div class="relative z-10 flex-1 flex flex-col h-full md:ml-72 transition-all duration-300 w-full">
+        
+        <header class="h-16 px-4 flex justify-between items-center relative z-20 glass-panel shrink-0">
+            <div class="flex items-center gap-3">
+                <button id="toggle-sidebar" class="md:hidden p-2 text-gray-400 hover:text-white active:scale-95 transition-transform">
+                    <i class="fa-solid fa-bars text-xl"></i>
+                </button>
+                <div class="flex flex-col">
+                    <h1 class="font-display text-xl font-black tracking-wider animated-title uppercase filter drop-shadow-[0_0_10px_rgba(217,70,239,0.3)]">
+                        ChatGPT AI
+                    </h1>
+                </div>
+            </div>
+            <div class="flex items-center gap-2">
+                <span class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                <span class="text-xs text-gray-400 font-mono hidden sm:inline">ONLINE</span>
+            </div>
+        </header>
+
+        <main id="chat-container" class="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6 relative scroll-smooth">
+            <div id="welcome-screen" class="absolute inset-0 flex flex-col items-center justify-center p-4 pointer-events-none z-0 transition-opacity duration-500">
+                <div class="relative w-32 h-32 sm:w-40 sm:h-40 mb-8 animate-pulse-glow pointer-events-auto transform hover:scale-105 transition-transform duration-500">
+                    <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-[0_0_15px_rgba(217,70,239,0.4)]">
+                        <defs>
+                            <linearGradient id="logoGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                                <stop offset="0%" style="stop-color:#ff00ff;stop-opacity:1" />
+                                <stop offset="50%" style="stop-color:#9d00ff;stop-opacity:1" />
+                                <stop offset="100%" style="stop-color:#00e1ff;stop-opacity:1" />
+                            </linearGradient>
+                        </defs>
+                        <g fill="none" stroke="url(#logoGradient)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+                            <path class="logo-path" d="M50 20 L75 35 L75 65 L50 80 L25 65 L25 35 Z" />
+                            <path d="M50 20 C 60 20, 75 35, 75 35" opacity="0.8"/>
+                            <path d="M75 35 C 75 45, 75 65, 75 65" opacity="0.8"/>
+                            <path d="M75 65 C 65 75, 50 80, 50 80" opacity="0.8"/>
+                            <path d="M50 80 C 40 80, 25 65, 25 65" opacity="0.8"/>
+                            <path d="M25 65 C 25 55, 25 35, 25 35" opacity="0.8"/>
+                            <path d="M25 35 C 35 25, 50 20, 50 20" opacity="0.8"/>
+                            <path d="M50 38 L62 45 L62 58 L50 65 L38 58 L38 45 Z" fill="url(#logoGradient)" opacity="0.2" class="animate-spin-slow" style="transform-origin: 50px 50px;"/>
+                        </g>
+                    </svg>
+                </div>
+                <h2 class="text-2xl md:text-3xl font-bold text-center text-white mb-2 font-display">Qanday yordam bera olaman?</h2>
+            </div>
+            <div id="messages-area" class="relative z-10 pb-4"></div>
+        </main>
+
+        <footer class="p-3 md:p-6 relative z-20 shrink-0">
+            <div class="max-w-3xl mx-auto">
+                <form id="chat-form" class="glass-input rounded-2xl p-2 flex items-end gap-2 shadow-2xl relative">
+                    <button type="button" id="upload-btn" class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center text-gray-400 hover:text-[#00ffff] transition-colors rounded-xl hover:bg-white/5 active:scale-95">
+                        <i class="fa-solid fa-paperclip text-lg"></i>
+                    </button>
+                    <div class="flex-1 min-h-[48px] flex items-center">
+                        <textarea id="user-input" rows="1" class="w-full bg-transparent text-white text-base font-sans placeholder-gray-500 focus:outline-none py-3 resize-none max-h-32" placeholder="Xabar yozing..." autocomplete="off"></textarea>
+                    </div>
+                    <button type="button" id="mic-btn" class="w-10 h-10 md:w-12 md:h-12 flex items-center justify-center text-gray-400 hover:text-[#d946ef] transition-colors rounded-xl hover:bg-white/5 active:scale-95">
+                        <i class="fa-solid fa-microphone text-lg"></i>
+                    </button>
+                    <button type="submit" id="submit-btn" class="w-10 h-10 md:w-12 md:h-12 bg-white/10 text-gray-500 cursor-not-allowed rounded-xl flex items-center justify-center transition-all duration-300" disabled>
+                        <i class="fa-solid fa-arrow-up"></i>
+                    </button>
+                </form>
+                <div class="text-center mt-3 hidden sm:block">
+                    <p class="text-[10px] text-gray-500">AI xato qilishi mumkin. Muhim ma'lumotlarni tekshiring.</p>
+                </div>
+            </div>
+        </footer>
+    </div>
+    <script src="js/app.js"></script>
+</body>
+</html>

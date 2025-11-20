@@ -1,0 +1,96 @@
+/* Reset va Asosiy Stillar */
+body, html {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    overflow: hidden;
+    background-color: #050509;
+    color: #ffffff;
+    -webkit-tap-highlight-color: transparent;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { 
+    background: linear-gradient(to bottom, #d946ef, #06b6d4); 
+    border-radius: 10px; 
+}
+
+/* Glassmorphism */
+.glass-panel {
+    background: rgba(15, 15, 25, 0.8);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+}
+
+.glass-input {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(10px);
+    transition: all 0.3s ease;
+}
+.glass-input:focus-within {
+    border-color: #d946ef;
+    background: rgba(255, 255, 255, 0.08);
+    box-shadow: 0 0 15px rgba(217, 70, 239, 0.2);
+}
+
+/* Animatsiyalar */
+.animated-title {
+    background: linear-gradient(
+        to right,
+        #ff00ff 20%,
+        #00ffff 40%,
+        #ffffff 60%,
+        #ff00ff 80%
+    );
+    background-size: 200% auto;
+    color: #fff;
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    animation: textShine 3s linear infinite;
+}
+
+@keyframes textShine {
+    0% { background-position: 0% 50% }
+    100% { background-position: 100% 50% }
+}
+
+.logo-path {
+    transform-origin: center;
+    animation: breathe 4s ease-in-out infinite alternate;
+}
+@keyframes breathe {
+    0% { transform: scale(1); stroke-width: 0; }
+    100% { transform: scale(1.05); stroke-width: 1; }
+}
+
+@keyframes pulseGlow {
+    0%, 100% { filter: drop-shadow(0 0 5px rgba(217, 70, 239, 0.5)); }
+    50% { filter: drop-shadow(0 0 15px rgba(6, 182, 212, 0.8)); }
+}
+.animate-pulse-glow {
+    animation: pulseGlow 3s ease-in-out infinite;
+}
+
+.animate-spin-slow {
+    animation: spin 10s linear infinite;
+}
+
+#canvas-container {
+    position: fixed;
+    top: 0; left: 0; width: 100%; height: 100%;
+    z-index: 0;
+}
+
+.sidebar-transition {
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+#sidebar-overlay {
+    transition: opacity 0.3s ease;
+}
