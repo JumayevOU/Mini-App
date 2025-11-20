@@ -1,223 +1,175 @@
-// public/app.js — Streaming-moslangan frontend
-(() => {
-  // DOM elementlari (HTML da bo'lishi kerak)
-  const chatEl = document.getElementById('chat');            // chat ishlanadigan kontyener (pre / div)
-  const inputEl = document.getElementById('input');          // xabar input (textarea yoki input)
-  const sendBtn = document.getElementById('send');           // yuborish tugmasi
-  const fileInput = document.getElementById('file');         // file input (type="file")
-  const cancelBtn = document.getElementById('cancel');       // bekor qilish tugmasi
-  const sessionIdEl = document.getElementById('sessionId');  // optional: sessiya id ko'rsatuvchi
+// ----------------------------------------
+// IMPORTS
+// ----------------------------------------
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const multer = require('multer');
+const FormData = require('form-data');
+const { Pool } = require('pg');
+const axios = require('axios');
 
-  // State
-  let currentAbortController = null;
-  let currentSessionId = localStorage.getItem('chat_session_id') || null;
-  if (sessionIdEl) sessionIdEl.textContent = currentSessionId || '—';
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-  // DOM helpers
-  function appendSystem(text) {
-    const el = document.createElement('div');
-    el.className = 'sys';
-    el.textContent = text;
-    chatEl.appendChild(el);
-    chatEl.scrollTop = chatEl.scrollHeight;
-  }
+// ----------------------------------------
+// MIDDLEWARE
+// ----------------------------------------
+app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-  function appendUser(text) {
-    const el = document.createElement('div');
-    el.className = 'user';
-    el.textContent = text;
-    chatEl.appendChild(el);
-    chatEl.scrollTop = chatEl.scrollHeight;
-  }
+// ----------------------------------------
+// MULTER (FILE UPLOAD)
+// ----------------------------------------
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, 'uploads/'),
+  filename: (req, file, cb) =>
+    cb(null, Date.now() + '-' + file.originalname),
+});
+const upload = multer({ storage });
 
-  function appendTokenChunk(token) {
-    // Agar oxirgi element assistant bo'lmasa, yangisini ochamiz
-    let last = chatEl.lastElementChild;
-    if (!last || !last.classList.contains('assistant')) {
-      const el = document.createElement('div');
-      el.className = 'assistant';
-      el.textContent = token;
-      chatEl.appendChild(el);
-    } else {
-      last.textContent += token;
+// ----------------------------------------
+// POSTGRES
+// ----------------------------------------
+const db = new Pool({
+  user: 'postgres',
+  host: 'localhost',
+  database: 'chatdb',
+  password: '12345',
+  port: 5432,
+});
+
+// ----------------------------------------
+// SSE CLIENTS
+// ----------------------------------------
+let clients = [];
+
+app.get('/stream', (req, res) => {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+
+  res.flushHeaders();
+
+  const client = { id: Date.now(), res };
+  clients.push(client);
+
+  console.log('Client connected:', client.id);
+
+  req.on('close', () => {
+    clients = clients.filter(c => c.id !== client.id);
+    console.log('Client disconnected:', client.id);
+  });
+});
+
+// SSE xabar yuborish
+function sendToAll(event, data) {
+  clients.forEach(c => {
+    c.res.write(`event: ${event}\n`);
+    c.res.write(`data: ${JSON.stringify(data)}\n\n`);
+  });
+}
+
+// ----------------------------------------
+// OPENAI STREAM (REAL-TIME)
+// ----------------------------------------
+async function streamChat(message, clientId) {
+  const response = await axios({
+    method: 'post',
+    url: 'https://api.openai.com/v1/chat/completions',
+    responseType: 'stream',
+    headers: {
+      'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    data: {
+      model: "gpt-4.1-mini",
+      stream: true,
+      messages: [
+        { role: "system", content: "You are a helpful assistant." },
+        { role: "user", content: message }
+      ]
     }
-    chatEl.scrollTop = chatEl.scrollHeight;
-  }
+  });
 
-  function setStatus(msg, isError = false) {
-    // Oddiy status ko'rsatish (console + system)
-    console[isError ? 'error' : 'log'](msg);
-    // small on-screen message
-    // Remove previous small sys if exists
-    // (keep UI minimal — developer can expand)
-  }
+  let fullText = "";
 
-  // Main send + stream function
-  async function sendAndStream({ userId = 'anonymous', type = 'text' } = {}) {
-    if (currentAbortController) {
-      setStatus('Oldingi so‘rov hali tugamadi. Avval bekor qiling yoki kuting.', true);
-      return;
-    }
+  response.data.on('data', chunk => {
+    const lines = chunk.toString().split('\n');
 
-    const message = (inputEl && inputEl.value) ? inputEl.value.trim() : '';
-    const file = fileInput && fileInput.files && fileInput.files[0] ? fileInput.files[0] : null;
-    if (!message && !file) {
-      setStatus('Iltimos, xabar yoki rasm yuboring.', true);
-      return;
-    }
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        const json = line.replace("data: ", "").trim();
 
-    // UI: append user xabari
-    if (message) appendUser(message);
-    else appendUser('[Rasm yuborildi]');
-
-    // tayyor FormData (server upload.single('file') kutiladi)
-    const form = new FormData();
-    form.append('userId', userId);
-    form.append('type', file ? 'image' : 'text');
-    form.append('message', message);
-    // Agar oldingi sessiya bor bo'lsa yuboramiz, aks holda server yangi sessiya yaratadi
-    if (currentSessionId) form.append('sessionId', currentSessionId);
-
-    if (file) {
-      form.append('file', file, file.name);
-    }
-
-    // Prepare abort controller
-    const controller = new AbortController();
-    currentAbortController = controller;
-    cancelBtn && (cancelBtn.disabled = false);
-
-    try {
-      const res = await fetch('/api/chat', {
-        method: 'POST',
-        body: form,
-        signal: controller.signal
-      });
-
-      if (!res.ok) {
-        const txt = await res.text().catch(()=>null);
-        appendSystem('Server javobida xatolik: ' + (txt || res.statusText));
-        currentAbortController = null;
-        cancelBtn && (cancelBtn.disabled = true);
-        return;
-      }
-
-      // ReadableStream orqali server yuborayotgan SSE-style ma'lumotni o'qish
-      const reader = res.body.getReader();
-      const decoder = new TextDecoder('utf-8');
-      let buffer = '';
-
-      // stream read loop
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer += decoder.decode(value, { stream: true });
-
-        // SSE bloklar: separated by \n\n
-        let idx;
-        while ((idx = buffer.indexOf('\n\n')) !== -1) {
-          const raw = buffer.slice(0, idx).trim();
-          buffer = buffer.slice(idx + 2);
-
-          // Each raw block may have multiple lines; process lines starting with "data:"
-          const lines = raw.split(/\r?\n/);
-          for (const line of lines) {
-            if (!line.startsWith('data:')) continue;
-            const dataStr = line.replace(/^data:\s*/, '').trim();
-            if (!dataStr) continue;
-
-            // sometimes server sends comments or simple text - attempt JSON.parse
-            let obj = null;
-            try {
-              obj = JSON.parse(dataStr);
-            } catch (e) {
-              // agar JSON bo'lmasa — skip yoki sistemyaberi
-              // appendSystem(dataStr);
-              continue;
-            }
-
-            // Handle known event types
-            if (obj.type === 'token' && obj.token) {
-              appendTokenChunk(obj.token);
-            } else if (obj.type === 'done') {
-              // done -> sessionId va newTitle olinadi
-              if (obj.sessionId) {
-                currentSessionId = obj.sessionId;
-                localStorage.setItem('chat_session_id', currentSessionId);
-                if (sessionIdEl) sessionIdEl.textContent = currentSessionId;
-              }
-              if (obj.newTitle) {
-                appendSystem('Sessiya sarlavhasi: ' + obj.newTitle);
-              }
-              // end reading loop; (server may still send but typically ends)
-              // we don't break outermost while; just keep going until stream ends
-            } else if (obj.type === 'error') {
-              appendSystem('AI/Xato: ' + (obj.message || JSON.stringify(obj)), true);
-            } else {
-              // other objects: show for debugging
-              // appendSystem(JSON.stringify(obj));
-            }
-          }
+        if (json === "[DONE]") {
+          sendToAll("end", { clientId });
+          return;
         }
+
+        try {
+          const parsed = JSON.parse(json);
+          const token = parsed.choices?.[0]?.delta?.content;
+
+          if (token) {
+            fullText += token;
+            sendToAll("token", { token, clientId });
+          }
+        } catch (err) {}
       }
-
-      // after stream finished
-      appendSystem('Javob toʻliq yuborildi ✅');
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        appendSystem('Soʻrov foydalanuvchi tomonidan bekor qilindi.');
-      } else {
-        appendSystem('Tarmoq yoki server xatosi: ' + String(err), true);
-      }
-    } finally {
-      currentAbortController = null;
-      cancelBtn && (cancelBtn.disabled = true);
-      // clear file input and text optionally
-      // fileInput && (fileInput.value = '');
-      inputEl && (inputEl.value = '');
     }
-  }
-
-  // Cancel function
-  function cancelCurrent() {
-    if (currentAbortController) {
-      currentAbortController.abort();
-      currentAbortController = null;
-      cancelBtn && (cancelBtn.disabled = true);
-    } else {
-      setStatus('Bekor qilish uchun hozir hech qanday so‘rov yo‘q.');
-    }
-  }
-
-  // Attach events
-  sendBtn && sendBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    sendAndStream({ userId: 'user_1' }); // agar kerak bo'lsa serverga haqiqiy userId yubor
   });
 
-  cancelBtn && cancelBtn.addEventListener('click', (e) => {
-    e.preventDefault();
-    cancelCurrent();
+  response.data.on('end', () => {
+    sendToAll("done", { message: fullText, clientId });
   });
+}
 
-  // Optional: enter to send (Shift+Enter for newline)
-  if (inputEl) {
-    inputEl.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        sendBtn && sendBtn.click();
-      }
-    });
+// ----------------------------------------
+// CHAT ROUTE
+// ----------------------------------------
+app.post('/chat', async (req, res) => {
+  try {
+    const { text, clientId } = req.body;
+
+    // DB ga saqlash
+    await db.query(
+      "INSERT INTO messages (sender, text) VALUES ($1, $2)",
+      ['user', text]
+    );
+
+    // Chatni streamda yuboramiz
+    streamChat(text, clientId);
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: "Server error" });
   }
+});
 
-  // Initialize UI state
-  if (cancelBtn) cancelBtn.disabled = true;
-  appendSystem('Chat tayyor — yozing va yuboring ✨');
+// ----------------------------------------
+// FILE UPLOAD + AI INSERT
+// ----------------------------------------
+app.post('/upload', upload.single('file'), async (req, res) => {
+  res.json({
+    status: "ok",
+    file: req.file.filename
+  });
+});
 
-  // Expose some helpers globally (debug/console)
-  window.chatClient = {
-    sendAndStream,
-    cancelCurrent,
-    getSessionId: () => currentSessionId
-  };
-})();
+// ----------------------------------------
+// OXIRGI 50 XABAR
+// ----------------------------------------
+app.get('/messages', async (req, res) => {
+  const result = await db.query("SELECT * FROM messages ORDER BY id DESC LIMIT 50");
+  res.json(result.rows.reverse());
+});
+
+// ----------------------------------------
+// START SERVER
+// ----------------------------------------
+app.listen(PORT, () => {
+  console.log(`Server started on port ${PORT}`);
+});
