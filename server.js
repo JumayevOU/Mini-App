@@ -55,7 +55,7 @@ async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
             parts: [{ text: m.content }]
         }));
 
-        // TUZATISH: Model nomi aniq 'gemini-1.5-flash' bo'lishi kerak
+        // TUZATISH: Model nomi aniq 'gemini-1.5-flash' (latest qo'shimchasisiz)
         const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
         
         const response = await fetch(url, {
@@ -72,7 +72,7 @@ async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
         
         if (!response.ok) {
             console.error("Gemini API Error:", JSON.stringify(data));
-            return "⚠️ AI xatoligi.";
+            return "⚠️ AI xatoligi (Model topilmadi yoki Kalit xato).";
         }
 
         if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
