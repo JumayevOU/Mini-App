@@ -9,12 +9,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- ENV VARS ---
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // O'zgardi
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
 const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL; 
 
-// Xatoliklarni aniq ko'rsatish
-if (!GEMINI_API_KEY) console.error("❌ XATOLIK: GEMINI_API_KEY topilmadi! Railway Variables bo'limini yangilang.");
+if (!GEMINI_API_KEY) console.error("❌ XATOLIK: GEMINI_API_KEY topilmadi!");
 if (!DATABASE_URL) console.error("❌ XATOLIK: DATABASE_URL topilmadi!");
 
 const pool = new Pool({
@@ -34,12 +33,9 @@ const CONCISE_INSTRUCTION =
     "Ortiqcha kirish so'zlarisiz to'g'ridan-to'g'ri javob bering. " +
     "Eng muhimi: Javobingizni har doim mavzuga mos EMOJILAR bilan bezang. 🎨✨";
 
-// --- YORDAMCHI FUNKSIYALAR ---
-
+// --- HELPERS ---
 function cleanResponse(text) {
     if (!text) return "";
-    // Gemini ba'zan yulduzcha (bold) ishlatishni yaxshi ko'radi, ularni chiroyli formatlash frontendda bo'ladi.
-    // Bu yerda faqat ortiqcha bo'shliqlarni olamiz.
     return text.trim();
 }
 
@@ -50,53 +46,42 @@ function cleanTitle(text) {
     return cleaned;
 }
 
-/**
- * Google Gemini AI dan javob olish
- */
 async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
     if (!GEMINI_API_KEY) return "⚠️ API kalit sozlanmagan.";
 
     try {
-        // 1. Tarixni Gemini formatiga o'tkazish
-        // Gemini "user" va "model" rollarini qabul qiladi.
         const contents = messages.map(m => ({
             role: m.role === 'assistant' ? 'model' : 'user',
             parts: [{ text: m.content }]
         }));
 
-        // 2. APIga so'rov (Gemini 1.5 Flash modeli)
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        // MODEL NOMI O'ZGARTIRILDI: gemini-1.5-flash-latest
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
         
         const response = await fetch(url, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
                 contents: contents,
-                systemInstruction: {
-                    parts: [{ text: systemPrompt }]
-                },
-                generationConfig: {
-                    temperature: 0.7,
-                    maxOutputTokens: 800,
-                }
+                systemInstruction: { parts: [{ text: systemPrompt }] },
+                generationConfig: { temperature: 0.7, maxOutputTokens: 800 }
             })
         });
         
         const data = await response.json();
         
         if (!response.ok) {
-            console.error("Gemini API Error:", JSON.stringify(data, null, 2));
-            return "⚠️ AI serverida xatolik yuz berdi.";
+            console.error("Gemini Error:", JSON.stringify(data));
+            // Fallback: Agar flash ishlamasa, pro ga urinib ko'rish mumkin (ixtiyoriy)
+            return "⚠️ AI xatoligi (Model topilmadi).";
         }
 
-        // 3. Javobni ajratib olish
         if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
             const text = data.candidates[0].content.parts.map(p => p.text).join('');
             return cleanResponse(text);
         } else {
-            return "⚠️ AI javob bermadi (Blocked or Empty).";
+            return "⚠️ AI javob bermadi.";
         }
-
     } catch (error) {
         console.error("Fetch Error:", error);
         return "⚠️ Tarmoq xatoligi.";
@@ -107,23 +92,18 @@ async function generateTitle(text) {
     try {
         const shortText = text.length > 500 ? text.substring(0, 500) : text;
         const prompt = `Quyidagi matnga mos 2-3 so'zli qisqa nom yoz. Faqat nomni yoz. Matn: "${shortText}"`;
-        
-        // Sarlavha uchun alohida so'rov (tarixsiz)
         const rawTitle = await getGeminiReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
         return cleanTitle(rawTitle);
-    } catch (e) {
-        return "Yangi suhbat";
-    }
+    } catch (e) { return "Yangi suhbat"; }
 }
 
-// --- OCR FUNKSIYASI ---
 async function extractTextFromImage(buffer) {
     if (!OCR_API_KEY) return null;
     try {
         const formData = new FormData();
         formData.append('file', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
         formData.append('apikey', OCR_API_KEY);
-        formData.append('language', 'eng'); // Yoki 'uz' agar mavjud bo'lsa
+        formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
 
         const response = await fetch("https://api.ocr.space/parse/image", { 
@@ -134,19 +114,12 @@ async function extractTextFromImage(buffer) {
         });
 
         const data = await response.json();
-        if (data.IsErroredOnProcessing) {
-            console.error("OCR API Error:", data.ErrorMessage);
-            return "⚠️ Rasm o'qilmadi.";
-        }
+        if (data.IsErroredOnProcessing) return "⚠️ Rasm o'qilmadi.";
         return data.ParsedResults?.[0]?.ParsedText?.trim() || "Rasmda matn topilmadi.";
-    } catch (e) { 
-        console.error("OCR Fetch Error:", e);
-        return "⚠️ Server xatosi (OCR)."; 
-    }
+    } catch (e) { return "⚠️ Server xatosi (OCR)."; }
 }
 
 // --- API ROUTES ---
-
 app.get('/api/sessions/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -183,7 +156,6 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         let replyText = "";
         let sessionTitle = null;
 
-        // 1. Sessiyani tekshirish
         if (!sessionId || sessionId === 'null') {
             try {
                 const newSession = await pool.query("INSERT INTO chat_sessions (user_id, title) VALUES ($1, 'Yangi suhbat') RETURNING id", [userId]);
@@ -192,8 +164,6 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         }
 
         let userContent = message || "";
-        
-        // 2. Rasm bo'lsa OCR qilish
         if (type === 'image' && req.file) {
             const ocrText = await extractTextFromImage(req.file.buffer);
             if (ocrText && ocrText.length > 2 && !ocrText.includes("⚠️")) {
@@ -203,19 +173,13 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             }
         }
 
-        // 3. User xabarini yozish
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
 
-        // 4. AI Javobini olish (Tarix bilan)
         const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
-        
-        // GEMINI FUNKSIYASI CHAQIRILADI
         replyText = await getGeminiReply(history.rows, CONCISE_INSTRUCTION);
 
-        // 5. AI javobini yozish
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, replyText]);
 
-        // 6. Sarlavha yangilash
         const sessionCheck = await pool.query("SELECT title FROM chat_sessions WHERE id = $1", [sessionId]);
         if (sessionCheck.rows[0].title === 'Yangi suhbat') {
             sessionTitle = await generateTitle(userContent);
@@ -225,10 +189,9 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         await pool.query("UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1", [sessionId]);
 
         res.json({ success: true, response: replyText, sessionId: sessionId, newTitle: sessionTitle });
-
     } catch (error) { 
         console.error("Global Error:", error);
-        res.json({ success: false, response: "Serverda jiddiy xatolik yuz berdi." }); 
+        res.json({ success: false, response: "Serverda jiddiy xatolik." }); 
     }
 });
 
