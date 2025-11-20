@@ -3,18 +3,10 @@ const cors = require('cors');
 const path = require('path');
 const multer = require('multer');
 const FormData = require('form-data');
-
-// Agar node-fetch kerak bo'lsa, kommentdan chiqaring (lekin Node v18+ da shart emas)
-// const fetch = require('node-fetch'); 
-
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// SIZNING API KALITLARINGIZ
-const MISTRAL_API_KEY = "sk-sz5a9Z7q3am9Rkzb0N2cngTRmOZR_TroVHc0xQrjwoHXLXdMf2nUkXjDuuYGe5Vmlwu3gODZOdOtGqIzAVISeg";
+const MISTRAL_API_KEY = "aWo4o2nHc5ZoY62aHs0OndgsM4jDO14f";
 const OCR_API_KEY = "K86767579488957"; 
-
-// SIZNING BOTINGIZDAGI SYSTEM PROMPT
 const CONCISE_INSTRUCTION = 
     "Siz faqat QISQA VA TEZ javob bering. " +
     "Javob 1-3 ta jumla bo'lsin; ortiqcha tushuntirishlardan voz keching. " +
@@ -25,10 +17,6 @@ const upload = multer({ storage: multer.memoryStorage() });
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
-
-// --- FUNKSIYALAR ---
-
-// XATOLIK TUZATILDI: 'def_getMistralReply' o'rniga 'function getMistralReply'
 async function getMistralReply(userMessage, systemPrompt = CONCISE_INSTRUCTION) {
     try {
         const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
@@ -76,34 +64,25 @@ async function extractTextFromImage(buffer) {
     }
 }
 
-// --- API ROUTES ---
-
 app.post('/api/chat', upload.single('file'), async (req, res) => {
     try {
         const message = req.body.message || "";
         const type = req.body.type || "text";
         let replyText = "";
-
-        // 1. MATNLI SAVOL
         if (type === 'text') {
-            // TUZATILDI: funksiya nomi to'g'ri chaqirilmoqda
             replyText = await getMistralReply(message);
         } 
-        
-        // 2. RASM (OCR + AI)
         else if (type === 'image' && req.file) {
             const extractedText = await extractTextFromImage(req.file.buffer);
             
             if (!extractedText || extractedText.length < 3) {
                 replyText = "Rasmda matn topilmadi. Iltimos aniqroq rasm yuboring.";
             } else {
-                // Rasmdagi matnni AI ga beramiz
                 const aiPrompt = `Quyidagi matn rasmdan olindi. Uni tahlil qilib ber:\n\n"${extractedText}"`;
                 replyText = await getMistralReply(aiPrompt);
             }
         }
 
-        // 3. OVOZLI XABAR
         else if (type === 'voice') {
             replyText = "Ovozli xabar qabul qilindi (Beta).";
         }
