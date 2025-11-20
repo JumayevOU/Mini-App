@@ -9,12 +9,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- ENV VARS ---
-const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY; // O'zgardi
 const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL; 
 
 // Xatoliklarni aniq ko'rsatish
-if (!MISTRAL_API_KEY) console.error("❌ XATOLIK: MISTRAL_API_KEY topilmadi!");
+if (!GEMINI_API_KEY) console.error("❌ XATOLIK: GEMINI_API_KEY topilmadi! Railway Variables bo'limini yangilang.");
 if (!DATABASE_URL) console.error("❌ XATOLIK: DATABASE_URL topilmadi!");
 
 const pool = new Pool({
@@ -28,7 +28,7 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- SYSTEM PROMPT (Sizning Python kodingizdan) ---
+// --- SYSTEM PROMPT ---
 const CONCISE_INSTRUCTION = 
     "Siz foydali AI yordamchisiz. Javoblaringiz juda QISQA, LO'NDA va ANIQ bo'lsin. " +
     "Ortiqcha kirish so'zlarisiz to'g'ridan-to'g'ri javob bering. " +
@@ -36,64 +36,67 @@ const CONCISE_INSTRUCTION =
 
 // --- YORDAMCHI FUNKSIYALAR ---
 
-/**
- * Javobni tozalash (Python clean_response funksiyasi bilan bir xil)
- * Faqat satr boshidagi ### belgilarni olib tashlaydi.
- */
 function cleanResponse(text) {
     if (!text) return "";
-    // Python: re.sub(r"(?m)^###\s*", "", text)
-    return text.replace(/^###\s*/gm, '').trim();
+    // Gemini ba'zan yulduzcha (bold) ishlatishni yaxshi ko'radi, ularni chiroyli formatlash frontendda bo'ladi.
+    // Bu yerda faqat ortiqcha bo'shliqlarni olamiz.
+    return text.trim();
 }
 
-/**
- * Sarlavhani tozalash
- */
 function cleanTitle(text) {
     if (!text) return "Suhbat";
-    // Faqat xavfsiz belgilarni qoldiramiz
     let cleaned = text.replace(/['"_`*#\[\]\(\)<>:.!?]/g, '').trim();
     if (cleaned.length > 35) cleaned = cleaned.substring(0, 35) + "...";
     return cleaned;
 }
 
 /**
- * Mistral AI dan javob olish
+ * Google Gemini AI dan javob olish
  */
-async function getMistralReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
-    if (!MISTRAL_API_KEY) return "⚠️ API kalit sozlanmagan.";
+async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
+    if (!GEMINI_API_KEY) return "⚠️ API kalit sozlanmagan.";
 
     try {
-        const apiMessages = [
-            { role: "system", content: systemPrompt },
-            ...messages.map(m => ({ role: m.role, content: m.content }))
-        ];
+        // 1. Tarixni Gemini formatiga o'tkazish
+        // Gemini "user" va "model" rollarini qabul qiladi.
+        const contents = messages.map(m => ({
+            role: m.role === 'assistant' ? 'model' : 'user',
+            parts: [{ text: m.content }]
+        }));
 
-        const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
+        // 2. APIga so'rov (Gemini 1.5 Flash modeli)
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        
+        const response = await fetch(url, {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${MISTRAL_API_KEY}`
-            },
+            headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                model: "mistral-large-latest", // Python kodingizdagi model
-                messages: apiMessages,
-                temperature: 0.7
+                contents: contents,
+                systemInstruction: {
+                    parts: [{ text: systemPrompt }]
+                },
+                generationConfig: {
+                    temperature: 0.7,
+                    maxOutputTokens: 800,
+                }
             })
         });
         
         const data = await response.json();
         
         if (!response.ok) {
-            console.error("Mistral API Error:", data);
-            return "⚠️ AI serverida xatolik yuz berdi (Limit yoki Model xatosi).";
+            console.error("Gemini API Error:", JSON.stringify(data, null, 2));
+            return "⚠️ AI serverida xatolik yuz berdi.";
         }
 
-        if (data.choices && data.choices.length > 0) {
-            return cleanResponse(data.choices[0].message.content);
+        // 3. Javobni ajratib olish
+        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
+            const text = data.candidates[0].content.parts.map(p => p.text).join('');
+            return cleanResponse(text);
         } else {
-            return "⚠️ AI javob bermadi.";
+            return "⚠️ AI javob bermadi (Blocked or Empty).";
         }
+
     } catch (error) {
         console.error("Fetch Error:", error);
         return "⚠️ Tarmoq xatoligi.";
@@ -104,7 +107,9 @@ async function generateTitle(text) {
     try {
         const shortText = text.length > 500 ? text.substring(0, 500) : text;
         const prompt = `Quyidagi matnga mos 2-3 so'zli qisqa nom yoz. Faqat nomni yoz. Matn: "${shortText}"`;
-        const rawTitle = await getMistralReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
+        
+        // Sarlavha uchun alohida so'rov (tarixsiz)
+        const rawTitle = await getGeminiReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
         return cleanTitle(rawTitle);
     } catch (e) {
         return "Yangi suhbat";
@@ -118,7 +123,7 @@ async function extractTextFromImage(buffer) {
         const formData = new FormData();
         formData.append('file', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
         formData.append('apikey', OCR_API_KEY);
-        formData.append('language', 'eng');
+        formData.append('language', 'eng'); // Yoki 'uz' agar mavjud bo'lsa
         formData.append('isOverlayRequired', 'false');
 
         const response = await fetch("https://api.ocr.space/parse/image", { 
@@ -204,7 +209,8 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         // 4. AI Javobini olish (Tarix bilan)
         const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
         
-        replyText = await getMistralReply(history.rows, CONCISE_INSTRUCTION);
+        // GEMINI FUNKSIYASI CHAQIRILADI
+        replyText = await getGeminiReply(history.rows, CONCISE_INSTRUCTION);
 
         // 5. AI javobini yozish
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, replyText]);
