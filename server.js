@@ -27,10 +27,11 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- YANGILANGAN SYSTEM PROMPT (Emoji + Qisqa) ---
 const CONCISE_INSTRUCTION = 
-    "Siz professional AI yordamchisiz. Javoblaringiz aniq, lo'nda va foydali bo'lsin. " +
-    "Ortiqcha mulozamat (salomlashish, xayrlashish) shart emas, to'g'ridan-to'g'ri javob bering. " +
-    "Kod so'ralsa, faqat kod va qisqa izoh bering.";
+    "Siz foydali AI yordamchisiz. Javoblaringiz juda QISQA, LO'NDA va ANIQ bo'lsin. " +
+    "Ortiqcha kirish so'zlari (salomlashish kabi) shart emas, to'g'ridan-to'g'ri maqsadga o'ting. " +
+    "Eng muhimi: Javobingizni har doim mavzuga mos EMOJILAR bilan bezang. 🎨✨";
 
 // --- HELPERS ---
 
@@ -80,12 +81,9 @@ async function generateTitle(text) {
     }
 }
 
-// --- OCR FUNKSIYASI (Tuzatilgan) ---
+// --- OCR FUNKSIYASI ---
 async function extractTextFromImage(buffer) {
-    if (!OCR_API_KEY) {
-        console.warn("OCR API Key yo'q");
-        return null;
-    }
+    if (!OCR_API_KEY) return null;
     try {
         const formData = new FormData();
         formData.append('file', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
@@ -93,24 +91,17 @@ async function extractTextFromImage(buffer) {
         formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
 
-        // Node 18+ fetch bilan ishlash uchun maxsus sozlamalar
         const response = await fetch("https://api.ocr.space/parse/image", { 
             method: "POST", 
             body: formData,
             headers: formData.getHeaders(),
-            duplex: 'half' // Node.js fetch uchun muhim!
+            duplex: 'half' 
         });
 
         const data = await response.json();
-        if (data.IsErroredOnProcessing) {
-            console.error("OCR Error:", data.ErrorMessage);
-            return "Rasmda matn aniqlanmadi.";
-        }
+        if (data.IsErroredOnProcessing) return "Rasmda matn aniqlanmadi.";
         return data.ParsedResults?.[0]?.ParsedText?.trim() || "Rasmda matn topilmadi.";
-    } catch (e) { 
-        console.error("OCR Fetch Xatosi:", e);
-        return "Rasm serverga yetib bormadi."; 
-    }
+    } catch (e) { return "Rasm serverga yetib bormadi."; }
 }
 
 // --- API ROUTES ---
@@ -160,14 +151,12 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
         let userContent = message || "";
         
-        // Rasm logikasi
         if (type === 'image' && req.file) {
             const ocrText = await extractTextFromImage(req.file.buffer);
-            // Agar OCR matn topsa uni qo'shamiz, bo'lmasa shunchaki rasm deb belgilaymiz
-            if (ocrText && ocrText.length > 2 && !ocrText.includes("xato")) {
-                userContent = `[Rasm ichidagi matn]: ${ocrText}\n\n(Iltimos, ushbu ma'lumotga asoslanib javob bering)`;
+            if (ocrText && ocrText.length > 2 && !ocrText.includes("aniqlanmadi")) {
+                userContent = `[Rasm ichidagi matn]: ${ocrText}\n\n(Iltimos, ushbu matnni tahlil qiling va javobni emojilar bilan bering)`;
             } else {
-                userContent = "[Rasm yuborildi, lekin matn aniqlanmadi. Umumiy javob bering.]";
+                userContent = "[Rasm yuborildi. Iltimos, umumiy javob bering]";
             }
         }
 
