@@ -13,8 +13,9 @@ const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL; 
 
-if (!MISTRAL_API_KEY) console.error("❌ MISTRAL_API_KEY topilmadi!");
-if (!DATABASE_URL) console.error("❌ DATABASE_URL topilmadi!");
+// Xatoliklarni aniq ko'rsatish
+if (!MISTRAL_API_KEY) console.error("❌ XATOLIK: MISTRAL_API_KEY topilmadi!");
+if (!DATABASE_URL) console.error("❌ XATOLIK: DATABASE_URL topilmadi!");
 
 const pool = new Pool({
     connectionString: DATABASE_URL,
@@ -27,28 +28,41 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- YANGILANGAN SYSTEM PROMPT (Emoji + Qisqa) ---
+// --- SYSTEM PROMPT (Sizning Python kodingizdan) ---
 const CONCISE_INSTRUCTION = 
     "Siz foydali AI yordamchisiz. Javoblaringiz juda QISQA, LO'NDA va ANIQ bo'lsin. " +
-    "Ortiqcha kirish so'zlari (salomlashish kabi) shart emas, to'g'ridan-to'g'ri maqsadga o'ting. " +
+    "Ortiqcha kirish so'zlarisiz to'g'ridan-to'g'ri javob bering. " +
     "Eng muhimi: Javobingizni har doim mavzuga mos EMOJILAR bilan bezang. 🎨✨";
 
-// --- HELPERS ---
+// --- YORDAMCHI FUNKSIYALAR ---
 
+/**
+ * Javobni tozalash (Python clean_response funksiyasi bilan bir xil)
+ * Faqat satr boshidagi ### belgilarni olib tashlaydi.
+ */
 function cleanResponse(text) {
     if (!text) return "";
-    return text.replace(/^###\s*/gm, '').replace(/^\*\*.*?\*\*/g, '').trim();
+    // Python: re.sub(r"(?m)^###\s*", "", text)
+    return text.replace(/^###\s*/gm, '').trim();
 }
 
+/**
+ * Sarlavhani tozalash
+ */
 function cleanTitle(text) {
     if (!text) return "Suhbat";
+    // Faqat xavfsiz belgilarni qoldiramiz
     let cleaned = text.replace(/['"_`*#\[\]\(\)<>:.!?]/g, '').trim();
     if (cleaned.length > 35) cleaned = cleaned.substring(0, 35) + "...";
     return cleaned;
 }
 
+/**
+ * Mistral AI dan javob olish
+ */
 async function getMistralReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
-    if (!MISTRAL_API_KEY) return "AI xizmati sozlanmagan.";
+    if (!MISTRAL_API_KEY) return "⚠️ API kalit sozlanmagan.";
+
     try {
         const apiMessages = [
             { role: "system", content: systemPrompt },
@@ -57,23 +71,39 @@ async function getMistralReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
 
         const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
             method: "POST",
-            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${MISTRAL_API_KEY}` },
-            body: JSON.stringify({ model: "mistral-large-latest", messages: apiMessages, temperature: 0.7 })
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${MISTRAL_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "mistral-large-latest", // Python kodingizdagi model
+                messages: apiMessages,
+                temperature: 0.7
+            })
         });
         
         const data = await response.json();
-        if (data.choices && data.choices.length > 0) return cleanResponse(data.choices[0].message.content);
-        return "AI javob bermadi.";
-    } catch (error) { 
-        console.error(error);
-        return "AI xatosi."; 
+        
+        if (!response.ok) {
+            console.error("Mistral API Error:", data);
+            return "⚠️ AI serverida xatolik yuz berdi (Limit yoki Model xatosi).";
+        }
+
+        if (data.choices && data.choices.length > 0) {
+            return cleanResponse(data.choices[0].message.content);
+        } else {
+            return "⚠️ AI javob bermadi.";
+        }
+    } catch (error) {
+        console.error("Fetch Error:", error);
+        return "⚠️ Tarmoq xatoligi.";
     }
 }
 
 async function generateTitle(text) {
     try {
         const shortText = text.length > 500 ? text.substring(0, 500) : text;
-        const prompt = `Quyidagi matnga 2-3 so'zli qisqa nom ber. Faqat nomni yoz. Matn: "${shortText}"`;
+        const prompt = `Quyidagi matnga mos 2-3 so'zli qisqa nom yoz. Faqat nomni yoz. Matn: "${shortText}"`;
         const rawTitle = await getMistralReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
         return cleanTitle(rawTitle);
     } catch (e) {
@@ -99,9 +129,15 @@ async function extractTextFromImage(buffer) {
         });
 
         const data = await response.json();
-        if (data.IsErroredOnProcessing) return "Rasmda matn aniqlanmadi.";
+        if (data.IsErroredOnProcessing) {
+            console.error("OCR API Error:", data.ErrorMessage);
+            return "⚠️ Rasm o'qilmadi.";
+        }
         return data.ParsedResults?.[0]?.ParsedText?.trim() || "Rasmda matn topilmadi.";
-    } catch (e) { return "Rasm serverga yetib bormadi."; }
+    } catch (e) { 
+        console.error("OCR Fetch Error:", e);
+        return "⚠️ Server xatosi (OCR)."; 
+    }
 }
 
 // --- API ROUTES ---
@@ -142,6 +178,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         let replyText = "";
         let sessionTitle = null;
 
+        // 1. Sessiyani tekshirish
         if (!sessionId || sessionId === 'null') {
             try {
                 const newSession = await pool.query("INSERT INTO chat_sessions (user_id, title) VALUES ($1, 'Yangi suhbat') RETURNING id", [userId]);
@@ -151,22 +188,28 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
         let userContent = message || "";
         
+        // 2. Rasm bo'lsa OCR qilish
         if (type === 'image' && req.file) {
             const ocrText = await extractTextFromImage(req.file.buffer);
-            if (ocrText && ocrText.length > 2 && !ocrText.includes("aniqlanmadi")) {
-                userContent = `[Rasm ichidagi matn]: ${ocrText}\n\n(Iltimos, ushbu matnni tahlil qiling va javobni emojilar bilan bering)`;
+            if (ocrText && ocrText.length > 2 && !ocrText.includes("⚠️")) {
+                userContent = `[Rasm ichidagi matn]: ${ocrText}\n\n(Iltimos, javobni emojilar bilan bering)`;
             } else {
-                userContent = "[Rasm yuborildi. Iltimos, umumiy javob bering]";
+                userContent = "[Rasm yuborildi, lekin matn aniqlanmadi. Umumiy tavsif bering]";
             }
         }
 
+        // 3. User xabarini yozish
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
 
+        // 4. AI Javobini olish (Tarix bilan)
         const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
+        
         replyText = await getMistralReply(history.rows, CONCISE_INSTRUCTION);
 
+        // 5. AI javobini yozish
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, replyText]);
 
+        // 6. Sarlavha yangilash
         const sessionCheck = await pool.query("SELECT title FROM chat_sessions WHERE id = $1", [sessionId]);
         if (sessionCheck.rows[0].title === 'Yangi suhbat') {
             sessionTitle = await generateTitle(userContent);
@@ -176,9 +219,10 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         await pool.query("UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1", [sessionId]);
 
         res.json({ success: true, response: replyText, sessionId: sessionId, newTitle: sessionTitle });
+
     } catch (error) { 
-        console.error(error);
-        res.json({ success: false, response: "Server xatosi." }); 
+        console.error("Global Error:", error);
+        res.json({ success: false, response: "Serverda jiddiy xatolik yuz berdi." }); 
     }
 });
 
