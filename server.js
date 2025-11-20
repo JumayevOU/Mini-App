@@ -8,12 +8,13 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// --- ENV VARS ---
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL; 
 
-if (!MISTRAL_API_KEY) console.error("❌ XATOLIK: MISTRAL_API_KEY topilmadi!");
-if (!DATABASE_URL) console.error("❌ XATOLIK: DATABASE_URL topilmadi!");
+if (!MISTRAL_API_KEY) console.error("❌ MISTRAL_API_KEY topilmadi!");
+if (!DATABASE_URL) console.error("❌ DATABASE_URL topilmadi!");
 
 const pool = new Pool({
     connectionString: DATABASE_URL,
@@ -27,17 +28,21 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
 const CONCISE_INSTRUCTION = 
-    "Siz foydali yordamchisiz. Javoblaringiz qisqa, lo'nda va aniq bo'lsin. Ortiqcha kirish so'zlarisiz to'g'ridan-to'g'ri javob bering.";
+    "Siz professional AI yordamchisiz. Javoblaringiz aniq, lo'nda va foydali bo'lsin. " +
+    "Ortiqcha mulozamat (salomlashish, xayrlashish) shart emas, to'g'ridan-to'g'ri javob bering. " +
+    "Kod so'ralsa, faqat kod va qisqa izoh bering.";
+
+// --- HELPERS ---
 
 function cleanResponse(text) {
     if (!text) return "";
-    return text.replace(/^###\s*/gm, '').trim();
+    return text.replace(/^###\s*/gm, '').replace(/^\*\*.*?\*\*/g, '').trim();
 }
 
 function cleanTitle(text) {
     if (!text) return "Suhbat";
-    let cleaned = text.replace(/['"_`*#\[\]\(\)<>]/g, '').trim();
-    if (cleaned.length > 30) cleaned = cleaned.substring(0, 30) + "...";
+    let cleaned = text.replace(/['"_`*#\[\]\(\)<>:.!?]/g, '').trim();
+    if (cleaned.length > 35) cleaned = cleaned.substring(0, 35) + "...";
     return cleaned;
 }
 
@@ -48,28 +53,39 @@ async function getMistralReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
             { role: "system", content: systemPrompt },
             ...messages.map(m => ({ role: m.role, content: m.content }))
         ];
+
         const response = await fetch("https://api.mistral.ai/v1/chat/completions", {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${MISTRAL_API_KEY}` },
             body: JSON.stringify({ model: "mistral-large-latest", messages: apiMessages, temperature: 0.7 })
         });
+        
         const data = await response.json();
         if (data.choices && data.choices.length > 0) return cleanResponse(data.choices[0].message.content);
         return "AI javob bermadi.";
-    } catch (error) { return "AI xatosi."; }
+    } catch (error) { 
+        console.error(error);
+        return "AI xatosi."; 
+    }
 }
 
 async function generateTitle(text) {
     try {
-        const prompt = `Matnga mos 2-3 so'zli qisqa nom yoz. Faqat nomni yoz. Matn: "${text}"`;
+        const shortText = text.length > 500 ? text.substring(0, 500) : text;
+        const prompt = `Quyidagi matnga 2-3 so'zli qisqa nom ber. Faqat nomni yoz. Matn: "${shortText}"`;
         const rawTitle = await getMistralReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
         return cleanTitle(rawTitle);
-    } catch (e) { return "Yangi suhbat"; }
+    } catch (e) {
+        return "Yangi suhbat";
+    }
 }
 
-// --- TUZATILGAN OCR FUNKSIYASI ---
+// --- OCR FUNKSIYASI (Tuzatilgan) ---
 async function extractTextFromImage(buffer) {
-    if (!OCR_API_KEY) return null;
+    if (!OCR_API_KEY) {
+        console.warn("OCR API Key yo'q");
+        return null;
+    }
     try {
         const formData = new FormData();
         formData.append('file', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
@@ -77,28 +93,27 @@ async function extractTextFromImage(buffer) {
         formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
 
-        // MUHIM TUZATISH: headers: formData.getHeaders() qo'shildi
+        // Node 18+ fetch bilan ishlash uchun maxsus sozlamalar
         const response = await fetch("https://api.ocr.space/parse/image", { 
             method: "POST", 
             body: formData,
-            headers: {
-                ...formData.getHeaders() // Boundary headerlarini to'g'ri qo'yish uchun
-            }
+            headers: formData.getHeaders(),
+            duplex: 'half' // Node.js fetch uchun muhim!
         });
-        
+
         const data = await response.json();
         if (data.IsErroredOnProcessing) {
-            console.error("OCR API Error:", data.ErrorMessage);
-            return "❌ Rasm o'qilmadi (OCR xatosi).";
+            console.error("OCR Error:", data.ErrorMessage);
+            return "Rasmda matn aniqlanmadi.";
         }
         return data.ParsedResults?.[0]?.ParsedText?.trim() || "Rasmda matn topilmadi.";
     } catch (e) { 
-        console.error("OCR Fetch Error:", e);
-        return "❌ Server xatosi (OCR)."; 
+        console.error("OCR Fetch Xatosi:", e);
+        return "Rasm serverga yetib bormadi."; 
     }
 }
 
-// --- ROUTELAR ---
+// --- API ROUTES ---
 
 app.get('/api/sessions/:userId', async (req, res) => {
     try {
@@ -148,8 +163,12 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         // Rasm logikasi
         if (type === 'image' && req.file) {
             const ocrText = await extractTextFromImage(req.file.buffer);
-            userContent = `[Rasm yuborildi]\nAniqlangan matn: ${ocrText}`;
-            
+            // Agar OCR matn topsa uni qo'shamiz, bo'lmasa shunchaki rasm deb belgilaymiz
+            if (ocrText && ocrText.length > 2 && !ocrText.includes("xato")) {
+                userContent = `[Rasm ichidagi matn]: ${ocrText}\n\n(Iltimos, ushbu ma'lumotga asoslanib javob bering)`;
+            } else {
+                userContent = "[Rasm yuborildi, lekin matn aniqlanmadi. Umumiy javob bering.]";
+            }
         }
 
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
