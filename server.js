@@ -10,23 +10,15 @@ const PORT = process.env.PORT || 3000;
 
 // --- KONFIGURATSIYA (XAVFSIZLIK) ---
 
-// API Kalitlarni faqat Environment Variables dan olamiz
 const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
 const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL; 
 
-// Kalitlar mavjudligini tekshirish (Server ishga tushganda xabar berish uchun)
-if (!MISTRAL_API_KEY) {
-    console.error("❌ XATOLIK: MISTRAL_API_KEY topilmadi! Railway Variables bo'limiga qo'shing.");
-}
-if (!OCR_API_KEY) {
-    console.warn("⚠️ OGOHLANTIRISH: OCR_API_KEY topilmadi! Rasm tahlili ishlamasligi mumkin.");
-}
-if (!DATABASE_URL) {
-    console.error("❌ XATOLIK: DATABASE_URL topilmadi! Railway Variables bo'limini tekshiring.");
-}
+// Muhim o'zgaruvchilar tekshiruvi
+if (!MISTRAL_API_KEY) console.error("❌ XATOLIK: MISTRAL_API_KEY topilmadi!");
+if (!DATABASE_URL) console.error("❌ XATOLIK: DATABASE_URL topilmadi!");
 
-// Ma'lumotlar bazasi ulanishi
+// Database ulanishi
 const pool = new Pool({
     connectionString: DATABASE_URL,
     ssl: DATABASE_URL && DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false } 
@@ -38,23 +30,32 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
+// --- SYSTEM PROMPT (Sizning Python kodingizdan) ---
+const CONCISE_INSTRUCTION = 
+    "Siz faqat QISQA VA TEZ javob bering. " +
+    "Javob 1-3 ta jumla bo'lsin; ortiqcha tushuntirishlardan voz keching. " +
+    "Kerak bo'lsa, maksimal 2 ta punkt bilan cheklangan ro'yxat bering.";
+
 // --- YORDAMCHI FUNKSIYALAR ---
 
 /**
- * Javobni tozalash
+ * Javobni tozalash (Python clean_response funksiyasi analogi)
+ * Satr boshidagi ### belgilarni olib tashlaydi.
  */
 function cleanResponse(text) {
     if (!text) return "";
+    // Regex: Python dagi re.sub(r"(?m)^###\s*", "", text) bilan bir xil
     return text.replace(/^###\s*/gm, '').trim();
 }
 
 /**
  * Mistral AI dan javob olish
  */
-async function getMistralReply(messages, systemPrompt) {
-    if (!MISTRAL_API_KEY) return "AI xizmati sozlanmagan (API Key yo'q).";
+async function getMistralReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
+    if (!MISTRAL_API_KEY) return "AI xizmati sozlanmagan.";
 
     try {
+        // API uchun xabarlar formatini tayyorlash
         const apiMessages = [
             { role: "system", content: systemPrompt },
             ...messages.map(m => ({ role: m.role, content: m.content }))
@@ -67,7 +68,7 @@ async function getMistralReply(messages, systemPrompt) {
                 "Authorization": `Bearer ${MISTRAL_API_KEY}`
             },
             body: JSON.stringify({
-                model: "mistral-tiny", 
+                model: "mistral-large-latest", // Python kodingizdagi model
                 messages: apiMessages,
                 temperature: 0.7
             })
@@ -94,6 +95,7 @@ async function getMistralReply(messages, systemPrompt) {
 async function generateTitle(text) {
     try {
         const prompt = `Matnga 2-4 so'zli qisqa sarlavha qo'y. Faqat sarlavhani yoz. Matn: "${text}"`;
+        // Sarlavha uchun alohida prompt ishlatamiz, lekin cleanResponse baribir ishlaydi
         const title = await getMistralReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
         return title.replace(/["\.]/g, '').trim();
     } catch (e) {
@@ -123,14 +125,14 @@ async function extractTextFromImage(buffer) {
         
         if (data.IsErroredOnProcessing) {
             console.error("OCR Error:", data.ErrorMessage);
-            return null;
+            return "❌ OCR xatosi";
         }
         
         const parsedText = data.ParsedResults?.[0]?.ParsedText?.trim();
-        return parsedText || null;
+        return parsedText || "Matn topilmadi";
     } catch (e) {
         console.error("OCR Exception:", e);
-        return null;
+        return "❌ OCR server xatosi";
     }
 }
 
@@ -188,7 +190,7 @@ app.post('/api/session', async (req, res) => {
     }
 });
 
-// 5. XABAR YUBORISH
+// 5. XABAR YUBORISH (Asosiy logika)
 app.post('/api/chat', upload.single('file'), async (req, res) => {
     try {
         const { userId, type, message } = req.body;
@@ -214,11 +216,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         
         if (type === 'image' && req.file) {
             const ocrText = await extractTextFromImage(req.file.buffer);
-            if (ocrText) {
-                userContent = `[Rasm Tahlili]: ${ocrText}\n\n(Foydalanuvchi rasmdagi matn haqida so'rayapti)`;
-            } else {
-                userContent = "[Rasm yuborildi, lekin matn aniqlanmadi. Umumiy tahlil qiling.]";
-            }
+            userContent = `[Rasm Tahlili]: ${ocrText}\n\n(Iltimos, ushbu rasmdagi matn yoki tasvir mazmuni bo'yicha qisqa javob bering)`;
         }
 
         // C) User xabarini bazaga yozish
@@ -227,16 +225,14 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             [sessionId, userContent, type]
         );
 
-        // D) Tarixni olish (Context Window)
+        // D) Tarixni olish (Context Window - Python kodingizdagi kabi 9-10 ta)
         const history = await pool.query(
             "SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10",
             [sessionId]
         );
         
-        const systemPrompt = "Siz foydali yordamchisiz. Javobingiz aniq, lo'nda va ortiqcha gaplarsiz bo'lsin.";
-        
-        // E) AI Javobini olish
-        replyText = await getMistralReply(history.rows, systemPrompt);
+        // E) AI Javobini olish (CONCISE_INSTRUCTION bilan)
+        replyText = await getMistralReply(history.rows, CONCISE_INSTRUCTION);
 
         // F) AI javobini bazaga yozish
         await pool.query(
@@ -244,7 +240,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             [sessionId, replyText]
         );
 
-        // G) Avto-Sarlavha
+        // G) Avto-Sarlavha (Agar birinchi xabar bo'lsa)
         const sessionCheck = await pool.query("SELECT title FROM chat_sessions WHERE id = $1", [sessionId]);
         if (sessionCheck.rows[0].title === 'Yangi suhbat') {
             sessionTitle = await generateTitle(userContent);
