@@ -1,30 +1,19 @@
-// 1. TELEGRAM SETUP & USER PROFILE
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
 tg.setHeaderColor('#0a0a12'); 
 tg.setBackgroundColor('#050509');
-
-// Foydalanuvchi ma'lumotlarini olish va o'rnatish
 const initUserProfile = () => {
     const user = tg.initDataUnsafe?.user;
-    
-    // Elementlarni topish
     const userNameEl = document.getElementById('sidebar-user-name');
     const userAvatarEl = document.getElementById('sidebar-user-avatar');
-
     if (user) {
-        // Ismni yangilash
         const fullName = `${user.first_name} ${user.last_name || ''}`.trim();
         if (userNameEl) userNameEl.textContent = fullName;
-
-        // Rasmni yangilash
         if (userAvatarEl) {
             if (user.photo_url) {
-                // Agar Telegram rasm url bersa (ko'pincha bot ruxsati kerak)
                 userAvatarEl.src = user.photo_url;
             } else {
-                // Agar rasm bo'lmasa, foydalanuvchi ismi yoki username asosida avatar generatsiya qilamiz
                 const seed = user.username || user.first_name;
                 userAvatarEl.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
             }
@@ -32,37 +21,28 @@ const initUserProfile = () => {
     }
 };
 
-// 2. THREE.JS BACKGROUND
 const initThreeJS = () => {
     const container = document.getElementById('canvas-container');
     const scene = new THREE.Scene();
-    
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     camera.position.z = 50;
-
     const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     container.appendChild(renderer.domElement);
-
-    // Particles
     const geometry = new THREE.BufferGeometry();
     const count = window.innerWidth < 768 ? 300 : 600;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
-
     const color1 = new THREE.Color(0xff00ff);
     const color2 = new THREE.Color(0x9d00ff);
     const color3 = new THREE.Color(0x00e1ff);
-
     for(let i = 0; i < count; i++) {
         positions[i * 3] = (Math.random() - 0.5) * 120;
         positions[i * 3 + 1] = (Math.random() - 0.5) * 120;
         positions[i * 3 + 2] = (Math.random() - 0.5) * 120;
-
         const rand = Math.random();
         let finalColor = rand < 0.33 ? color1 : (rand < 0.66 ? color2 : color3);
-
         colors[i * 3] = finalColor.r;
         colors[i * 3 + 1] = finalColor.g;
         colors[i * 3 + 2] = finalColor.b;
@@ -70,7 +50,6 @@ const initThreeJS = () => {
 
     geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
     const material = new THREE.PointsMaterial({
         size: 0.5,
         vertexColors: true,
@@ -78,7 +57,6 @@ const initThreeJS = () => {
         opacity: 0.6,
         blending: THREE.AdditiveBlending
     });
-
     const starField = new THREE.Points(geometry, material);
     scene.add(starField);
 
@@ -97,10 +75,9 @@ const initThreeJS = () => {
     });
 };
 
-// 3. APP LOGIC
 document.addEventListener('DOMContentLoaded', () => {
     initThreeJS();
-    initUserProfile(); // Profilni yuklash
+    initUserProfile();
 
     const chatContainer = document.getElementById('chat-container');
     const messagesArea = document.getElementById('messages-area');
@@ -110,8 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const uploadBtn = document.getElementById('upload-btn');
     const fileInput = document.getElementById('file-upload');
     const micBtn = document.getElementById('mic-btn');
-    
-    // Sidebar Elements
     const sidebar = document.getElementById('sidebar');
     const sidebarOverlay = document.getElementById('sidebar-overlay');
     const toggleSidebar = document.getElementById('toggle-sidebar');
@@ -119,11 +94,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const chatHistoryList = document.getElementById('chat-history-list');
     const clearHistoryBtn = document.getElementById('clear-history');
     const newChatBtn = document.getElementById('new-chat-btn');
-
-    // State
     let messages = JSON.parse(localStorage.getItem('chatHistory')) || [];
-
-    // Helpers
     const toggleWelcomeScreen = () => {
         if (messages.length > 0) {
             welcomeScreen.classList.add('opacity-0', 'pointer-events-none');
@@ -134,7 +105,6 @@ document.addEventListener('DOMContentLoaded', () => {
             welcomeScreen.classList.remove('opacity-0', 'pointer-events-none');
         }
     };
-
     const scrollToBottom = () => {
         chatContainer.scrollTo({ top: chatContainer.scrollHeight, behavior: 'smooth' });
     };
@@ -143,14 +113,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const toSave = messages.slice(-50);
         localStorage.setItem('chatHistory', JSON.stringify(toSave));
     };
-
     const renderHistoryList = () => {
         chatHistoryList.innerHTML = '';
         if (messages.length === 0) {
             chatHistoryList.innerHTML = '<div class="text-center text-gray-500 text-xs mt-4">Tarix bo\'sh</div>';
             return;
         }
-        
         const userMsgs = messages.filter(m => m.isUser).slice(-10).reverse();
         userMsgs.forEach(msg => {
             const btn = document.createElement('button');
@@ -198,7 +166,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     </div>
                 </div>`;
         }
-
         div.innerHTML = `
             ${avatar}
             <div class="${bubbleClass} p-3 md:p-4 rounded-2xl rounded-tr-sm text-white ${type === 'image' ? 'p-1 bg-transparent border-none' : ''}">
@@ -339,7 +306,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     });
 
-    // Initial Render
     if (messages.length > 0) {
         welcomeScreen.classList.add('hidden');
         messages.forEach(msg => appendMessage(msg.content, msg.isUser, msg.type));
