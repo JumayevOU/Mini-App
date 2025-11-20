@@ -8,16 +8,25 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- KONFIGURATSIYA ---
-const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY || "sk-sz5a9Z7q3am9Rkzb0N2cngTRmOZR_TroVHc0xQrjwoHXLXdMf2nUkXjDuuYGe5Vmlwu3gODZOdOtGqIzAVISeg";
-const OCR_API_KEY = process.env.OCR_API_KEY || "K86767579488957"; 
+// --- KONFIGURATSIYA (XAVFSIZLIK) ---
 
-// Ma'lumotlar bazasiga ulanish
+// API Kalitlarni faqat Environment Variables dan olamiz
+const MISTRAL_API_KEY = process.env.MISTRAL_API_KEY;
+const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL; 
+
+// Kalitlar mavjudligini tekshirish (Server ishga tushganda xabar berish uchun)
+if (!MISTRAL_API_KEY) {
+    console.error("❌ XATOLIK: MISTRAL_API_KEY topilmadi! Railway Variables bo'limiga qo'shing.");
+}
+if (!OCR_API_KEY) {
+    console.warn("⚠️ OGOHLANTIRISH: OCR_API_KEY topilmadi! Rasm tahlili ishlamasligi mumkin.");
+}
 if (!DATABASE_URL) {
     console.error("❌ XATOLIK: DATABASE_URL topilmadi! Railway Variables bo'limini tekshiring.");
 }
 
+// Ma'lumotlar bazasi ulanishi
 const pool = new Pool({
     connectionString: DATABASE_URL,
     ssl: DATABASE_URL && DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false } 
@@ -29,15 +38,13 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- YORDAMCHI FUNKSIYALAR (Sizning Python kodingizdan olingan) ---
+// --- YORDAMCHI FUNKSIYALAR ---
 
 /**
- * Javobni tozalash (Python clean_response funksiyasi analogi)
- * Keraksiz ### belgilarini va bo'shliqlarni olib tashlaydi.
+ * Javobni tozalash
  */
 function cleanResponse(text) {
     if (!text) return "";
-    // Regex: Satr boshidagi ### va bo'shliqlarni olib tashlash
     return text.replace(/^###\s*/gm, '').trim();
 }
 
@@ -45,8 +52,9 @@ function cleanResponse(text) {
  * Mistral AI dan javob olish
  */
 async function getMistralReply(messages, systemPrompt) {
+    if (!MISTRAL_API_KEY) return "AI xizmati sozlanmagan (API Key yo'q).";
+
     try {
-        // API uchun xabarlar formatini tayyorlash
         const apiMessages = [
             { role: "system", content: systemPrompt },
             ...messages.map(m => ({ role: m.role, content: m.content }))
@@ -59,8 +67,6 @@ async function getMistralReply(messages, systemPrompt) {
                 "Authorization": `Bearer ${MISTRAL_API_KEY}`
             },
             body: JSON.stringify({
-                // Python kodingizda 'mistral-large-latest' edi, lekin barqarorlik uchun 'mistral-tiny' ishlatamiz.
-                // Agar kalitingizda ruxsat bo'lsa 'mistral-large-latest' ga o'zgartirishingiz mumkin.
                 model: "mistral-tiny", 
                 messages: apiMessages,
                 temperature: 0.7
@@ -71,11 +77,10 @@ async function getMistralReply(messages, systemPrompt) {
         
         if (data.choices && data.choices.length > 0) {
             const rawContent = data.choices[0].message.content;
-            // Javobni tozalab qaytaramiz
             return cleanResponse(rawContent);
         } else {
             console.error("Mistral Response Error:", data);
-            return "AI javob bermadi (Limit yoki xatolik).";
+            return "AI javob bermadi.";
         }
     } catch (error) {
         console.error("Mistral Fetch Error:", error);
@@ -84,7 +89,7 @@ async function getMistralReply(messages, systemPrompt) {
 }
 
 /**
- * Sarlavha generatsiya qilish (Qisqa va aniq)
+ * Sarlavha generatsiya qilish
  */
 async function generateTitle(text) {
     try {
@@ -100,17 +105,18 @@ async function generateTitle(text) {
  * Rasmdan matn ajratib olish (OCR)
  */
 async function extractTextFromImage(buffer) {
+    if (!OCR_API_KEY) return null;
+
     try {
         const formData = new FormData();
         formData.append('file', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
         formData.append('apikey', OCR_API_KEY);
-        formData.append('language', 'eng'); // Yoki 'uz' agar mavjud bo'lsa
+        formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
 
         const response = await fetch("https://api.ocr.space/parse/image", {
             method: "POST",
             body: formData,
-            // FormData o'zi kerakli headerlarni (boundary) qo'yadi
         });
 
         const data = await response.json();
@@ -130,7 +136,7 @@ async function extractTextFromImage(buffer) {
 
 // --- API ROUTELAR ---
 
-// 1. Chatlar ro'yxati (Sidebar)
+// 1. Chatlar ro'yxati
 app.get('/api/sessions/:userId', async (req, res) => {
     try {
         const { userId } = req.params;
@@ -144,7 +150,7 @@ app.get('/api/sessions/:userId', async (req, res) => {
     }
 });
 
-// 2. Xabarlar tarixi (Chatni yuklash)
+// 2. Xabarlar tarixi
 app.get('/api/messages/:sessionId', async (req, res) => {
     try {
         const { sessionId } = req.params;
@@ -182,7 +188,7 @@ app.post('/api/session', async (req, res) => {
     }
 });
 
-// 5. XABAR YUBORISH (Asosiy logika)
+// 5. XABAR YUBORISH
 app.post('/api/chat', upload.single('file'), async (req, res) => {
     try {
         const { userId, type, message } = req.body;
@@ -206,7 +212,6 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         // B) User xabarini qayta ishlash
         let userContent = message || "";
         
-        // Agar rasm bo'lsa
         if (type === 'image' && req.file) {
             const ocrText = await extractTextFromImage(req.file.buffer);
             if (ocrText) {
@@ -223,32 +228,30 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         );
 
         // D) Tarixni olish (Context Window)
-        // Python kodingizda 9 ta xabar edi, biz bu yerda oxirgi 10 tasini olamiz
         const history = await pool.query(
             "SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10",
             [sessionId]
         );
         
-        // E) System Prompt (Siz so'ragan "aniq va ortiqcha narsalarsiz" buyrug'i)
-        const systemPrompt = "Siz foydali yordamchisiz. Javobingiz aniq, lo'nda va ortiqcha gaplarsiz bo'lsin. Agar kod so'ralsa, faqat kodni va qisqa izohni bering.";
+        const systemPrompt = "Siz foydali yordamchisiz. Javobingiz aniq, lo'nda va ortiqcha gaplarsiz bo'lsin.";
         
-        // F) AI Javobini olish
+        // E) AI Javobini olish
         replyText = await getMistralReply(history.rows, systemPrompt);
 
-        // G) AI javobini bazaga yozish
+        // F) AI javobini bazaga yozish
         await pool.query(
             "INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')",
             [sessionId, replyText]
         );
 
-        // H) Avto-Sarlavha (Birinchi xabar bo'lsa)
+        // G) Avto-Sarlavha
         const sessionCheck = await pool.query("SELECT title FROM chat_sessions WHERE id = $1", [sessionId]);
         if (sessionCheck.rows[0].title === 'Yangi suhbat') {
             sessionTitle = await generateTitle(userContent);
             await pool.query("UPDATE chat_sessions SET title = $1 WHERE id = $2", [sessionTitle, sessionId]);
         }
 
-        // I) Vaqtni yangilash
+        // H) Vaqtni yangilash
         await pool.query("UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1", [sessionId]);
 
         res.json({
