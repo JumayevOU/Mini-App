@@ -1,325 +1,222 @@
-const tg = window.Telegram.WebApp;
-tg.ready();
-tg.expand();
-tg.setHeaderColor('#050509'); 
-tg.setBackgroundColor('#050509');
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const multer = require('multer');
+const FormData = require('form-data');
+const { Pool } = require('pg');
 
-let currentSessionId = null;
-let currentUserId = tg.initDataUnsafe?.user?.id || 12345; 
-let isTyping = false;
+const app = express();
+const PORT = process.env.PORT || 3000;
 
-const els = {
-    chatContainer: document.getElementById('chat-container'),
-    messagesList: document.getElementById('messages-list'),
-    welcomeScreen: document.getElementById('welcome-screen'),
-    userInput: document.getElementById('user-input'),
-    chatForm: document.getElementById('chat-form'),
-    submitBtn: document.getElementById('submit-btn'),
-    chatHistoryList: document.getElementById('chat-history-list'),
-    sidebar: document.getElementById('sidebar'),
-    sidebarOverlay: document.getElementById('sidebar-overlay'),
-    chatTitle: document.getElementById('chat-title'),
-    fileInput: document.getElementById('file-upload'),
-    userAvatar: document.getElementById('user-avatar'),
-    userName: document.getElementById('user-name'),
-    userStatus: document.getElementById('user-status')
-};
+// --- ENV VARS ---
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const OCR_API_KEY = process.env.OCR_API_KEY;
+const DATABASE_URL = process.env.DATABASE_URL;
 
-function loadUserProfile() {
-    const user = tg.initDataUnsafe?.user;
-    if (user) {
-        currentUserId = user.id;
-        const fullName = `${user.first_name} ${user.last_name || ''}`.trim();
-        els.userName.textContent = fullName || user.username || "Foydalanuvchi";
-        els.userStatus.textContent = user.username ? `@${user.username}` : `ID: ${user.id}`;
+if (!OPENAI_API_KEY) console.error("❌ XATOLIK: OPENAI_API_KEY topilmadi!");
+if (!DATABASE_URL) console.error("❌ XATOLIK: DATABASE_URL topilmadi!");
 
-        if (user.photo_url) {
-            els.userAvatar.src = user.photo_url;
-        } else {
-            const seed = user.username || user.first_name || "user";
-            els.userAvatar.src = `https://api.dicebear.com/7.x/avataaars/svg?seed=${seed}&backgroundColor=b6e3f4,c0aede,d1d4f9`;
-        }
-    }
-}
-
-function toggleWelcome(show) {
-    if (show) {
-        els.welcomeScreen.classList.remove('hidden');
-        els.messagesList.innerHTML = '';
-        // Sarlavhani o'zgartirmaymiz, u static
-    } else {
-        els.welcomeScreen.classList.add('hidden');
-    }
-}
-
-function scrollToBottom() {
-    els.chatContainer.scrollTo({ top: els.chatContainer.scrollHeight, behavior: 'smooth' });
-}
-
-function formatMessage(content) {
-    content = content.replace(/```([\s\S]*?)```/g, '<pre class="bg-[#0a0a12] p-3 rounded-lg my-2 overflow-x-auto border border-white/10 shadow-inner"><code class="text-sm font-mono text-[#00ffff]">$1</code></pre>');
-    content = content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">$1</strong>');
-    content = content.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-[#d946ef] border border-white/5">$1</code>');
-    return content.replace(/\n/g, '<br>');
-}
-
-function appendMessage(content, role, type = 'text', animate = true) {
-    const isUser = role === 'user';
-    const div = document.createElement('div');
-    div.className = `flex items-end gap-3 ${isUser ? 'flex-row-reverse' : ''} ${animate ? 'animate-slide-in' : ''}`;
-    
-    const avatar = isUser 
-        ? `<div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#7c3aed] to-[#db2777] flex items-center justify-center shrink-0 shadow-lg border border-white/10"><i class="fa-solid fa-user text-xs text-white"></i></div>`
-        : `<div class="w-9 h-9 rounded-xl bg-[#0a0a12] border border-white/10 flex items-center justify-center shrink-0 shadow-lg shadow-[#00ffff]/10"><i class="fa-solid fa-robot text-[#00ffff] text-sm"></i></div>`;
-
-    let innerContent = '';
-    if (type === 'text') {
-        innerContent = `<div class="leading-relaxed text-[15px] font-medium whitespace-pre-wrap tracking-wide">${formatMessage(content)}</div>`;
-    } else if (type === 'image') {
-        innerContent = `<div class="flex items-center gap-2 text-sm font-medium italic text-gray-300"><i class="fa-regular fa-image text-[#00ffff]"></i> Rasm yuborildi</div>`;
-    }
-
-    const bubbleClass = isUser 
-        ? 'bg-gradient-to-r from-[#7c3aed] to-[#db2777] text-white shadow-[0_4px_15px_rgba(124,58,237,0.3)] border border-white/10 rounded-2xl rounded-tr-none' 
-        : 'bg-[#111116] text-gray-200 shadow-md border border-white/5 rounded-2xl rounded-tl-none border-l-[3px] border-l-[#00ffff]';
-
-    div.innerHTML = `
-        ${avatar}
-        <div class="${bubbleClass} p-4 min-w-[60px] max-w-[85%] relative group transition-all hover:shadow-xl">
-            ${innerContent}
-            <div class="text-[10px] opacity-50 text-right mt-1.5 font-mono tracking-wider flex items-center justify-end gap-1">
-                ${isUser ? '<i class="fa-solid fa-check text-[9px]"></i>' : ''} 
-                ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
-            </div>
-        </div>
-    `;
-    els.messagesList.appendChild(div);
-    scrollToBottom();
-}
-
-function showTyping() {
-    const div = document.createElement('div');
-    div.id = 'typing-indicator';
-    div.className = 'flex items-end gap-3 animate-pulse pl-0';
-    const avatar = `<div class="w-9 h-9 rounded-xl bg-[#0a0a12] border border-white/10 flex items-center justify-center shrink-0 shadow-lg shadow-[#00ffff]/10"><i class="fa-solid fa-robot text-[#00ffff] text-sm"></i></div>`;
-    div.innerHTML = `
-        ${avatar}
-        <div class="bg-[#111116] border border-white/5 border-l-[3px] border-l-[#00ffff] p-4 rounded-2xl rounded-tl-none w-fit shadow-md flex gap-1.5 items-center h-[50px]">
-             <div class="w-2 h-2 bg-[#00ffff] rounded-full animate-bounce"></div>
-             <div class="w-2 h-2 bg-[#d946ef] rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
-             <div class="w-2 h-2 bg-white rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
-        </div>
-    `;
-    els.messagesList.appendChild(div);
-    scrollToBottom();
-}
-
-function hideTyping() {
-    const el = document.getElementById('typing-indicator');
-    if (el) el.remove();
-}
-
-async function loadSessions() {
-    try {
-        const res = await fetch(`/api/sessions/${currentUserId}`);
-        const sessions = await res.json();
-        els.chatHistoryList.innerHTML = '';
-        
-        sessions.forEach(session => {
-            const btn = document.createElement('button');
-            const isActive = currentSessionId === session.id;
-            btn.className = `w-full text-left p-3 rounded-xl mb-1.5 transition-all flex items-center gap-3 group border border-transparent active:scale-95 ${
-                isActive 
-                ? 'bg-white/10 text-white border-white/5 shadow-[0_0_10px_rgba(0,255,255,0.1)]' 
-                : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
-            }`;
-            btn.innerHTML = `
-                <i class="fa-regular fa-message text-xs ${isActive ? 'text-[#00ffff]' : 'opacity-50'}"></i> 
-                <span class="truncate flex-1 text-sm font-medium">${session.title || 'Suhbat'}</span>
-                <div class="delete-btn opacity-0 group-hover:opacity-100 p-1.5 hover:bg-red-500/20 hover:text-red-400 rounded-md transition-all" title="O'chirish">
-                    <i class="fa-solid fa-trash text-[10px]"></i>
-                </div>
-            `;
-            btn.onclick = () => loadChat(session.id, session.title);
-            const delBtn = btn.querySelector('.delete-btn');
-            delBtn.onclick = (e) => { e.stopPropagation(); deleteSession(session.id); };
-            els.chatHistoryList.appendChild(btn);
-        });
-    } catch (e) { console.error(e); }
-}
-
-async function loadChat(sessionId, title) {
-    currentSessionId = sessionId;
-    // BU YERDA O'ZGARISH: Header sarlavhasini o'zgartirmaymiz
-    // els.chatTitle.textContent = title || 'Chat';
-    
-    toggleSidebar(false);
-    toggleWelcome(false);
-    els.messagesList.innerHTML = '<div class="flex justify-center py-8"><i class="fa-solid fa-circle-notch fa-spin text-[#00ffff] text-2xl"></i></div>';
-    loadSessions();
-
-    try {
-        const res = await fetch(`/api/messages/${sessionId}`);
-        const messages = await res.json();
-        els.messagesList.innerHTML = '';
-        if (messages.length === 0) toggleWelcome(true);
-        else messages.forEach(m => appendMessage(m.content, m.role, m.type, false));
-        scrollToBottom();
-    } catch (e) {
-        els.messagesList.innerHTML = '<div class="text-center text-red-400 py-4 text-sm">Xatolik yuz berdi</div>';
-    }
-}
-
-async function deleteSession(id) {
-    if (!confirm("Suhbatni o'chirasizmi?")) return;
-    await fetch(`/api/session/${id}`, { method: 'DELETE' });
-    if (currentSessionId === id) startNewChat();
-    else loadSessions();
-}
-
-async function startNewChat() {
-    currentSessionId = null;
-    toggleWelcome(true);
-    toggleSidebar(false);
-    loadSessions();
-}
-
-async function sendMessage(text, type = 'text', file = null) {
-    if (isTyping) return;
-    isTyping = true;
-    appendMessage(text, 'user', type);
-    toggleWelcome(false);
-    els.userInput.value = '';
-    els.userInput.style.height = 'auto';
-    updateSubmitBtn();
-    showTyping();
-
-    const formData = new FormData();
-    formData.append('userId', currentUserId);
-    formData.append('message', text);
-    formData.append('type', type);
-    if (currentSessionId) formData.append('sessionId', currentSessionId);
-    if (file) formData.append('file', file);
-
-    try {
-        const res = await fetch('/api/chat', { method: 'POST', body: formData });
-        const data = await res.json();
-        hideTyping();
-        if (data.success) {
-            appendMessage(data.response, 'assistant');
-            // BU YERDA O'ZGARISH: Sarlavha o'zgartirishni olib tashlaymiz
-            if (currentSessionId !== data.sessionId || data.newTitle) {
-                currentSessionId = data.sessionId;
-                // els.chatTitle.textContent = data.newTitle; // Olib tashlandi
-                loadSessions(); // Sidebar yangilanadi
-            }
-        } else {
-            appendMessage("Xatolik: " + data.response, 'assistant');
-        }
-    } catch (e) {
-        hideTyping();
-        appendMessage("Tarmoq xatoligi.", 'assistant');
-    }
-    isTyping = false;
-}
-
-function toggleSidebar(show) {
-    if (show) {
-        els.sidebar.classList.remove('-translate-x-full');
-        els.sidebarOverlay.classList.remove('hidden');
-        requestAnimationFrame(() => els.sidebarOverlay.classList.remove('opacity-0'));
-    } else {
-        els.sidebar.classList.add('-translate-x-full');
-        els.sidebarOverlay.classList.add('opacity-0');
-        setTimeout(() => els.sidebarOverlay.classList.add('hidden'), 300);
-    }
-}
-
-document.getElementById('toggle-sidebar').onclick = () => toggleSidebar(true);
-document.getElementById('close-sidebar').onclick = () => toggleSidebar(false);
-els.sidebarOverlay.onclick = () => toggleSidebar(false);
-document.getElementById('new-chat-btn').onclick = startNewChat;
-
-els.userInput.addEventListener('input', function() {
-    this.style.height = 'auto';
-    this.style.height = (this.scrollHeight) + 'px';
-    updateSubmitBtn();
+const pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: DATABASE_URL && DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
 });
 
-function updateSubmitBtn() {
-    if (els.userInput.value.trim().length > 0) {
-        els.submitBtn.removeAttribute('disabled');
-        els.submitBtn.classList.replace('bg-white/5', 'bg-[#d946ef]');
-        els.submitBtn.classList.remove('text-gray-600', 'cursor-not-allowed');
-        els.submitBtn.classList.add('text-white', 'shadow-lg', 'shadow-purple-500/30');
-    } else {
-        els.submitBtn.setAttribute('disabled', 'true');
-        els.submitBtn.classList.replace('bg-[#d946ef]', 'bg-white/5');
-        els.submitBtn.classList.add('text-gray-600', 'cursor-not-allowed');
-        els.submitBtn.classList.remove('text-white', 'shadow-lg', 'shadow-purple-500/30');
-    }
+const upload = multer({ storage: multer.memoryStorage() });
+
+app.use(cors());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.static(path.join(__dirname, 'public')));
+
+const CONCISE_INSTRUCTION = 
+    "Siz foydali AI yordamchisiz. Javoblaringiz juda QISQA, LO'NDA va ANIQ bo'lsin. " +
+    "Eng muhimi: Javobingizni har doim mavzuga mos EMOJILAR bilan bezang. 🎨✨";
+
+// --- HELPERS ---
+function cleanResponse(text) {
+    if (!text) return "";
+    return text.trim();
 }
 
-els.chatForm.onsubmit = (e) => {
-    e.preventDefault();
-    const text = els.userInput.value.trim();
-    if (text) sendMessage(text);
-};
-
-els.fileInput.onchange = (e) => {
-    const file = e.target.files[0];
-    if (file) sendMessage("Rasm tahlili...", 'image', file);
-};
-document.getElementById('upload-btn').onclick = () => els.fileInput.click();
-
-(function init() {
-    loadUserProfile();
-    loadSessions();
-    
-    const container = document.getElementById('canvas-container');
-    if (container) {
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-        camera.position.z = 50;
-        const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true });
-        renderer.setSize(window.innerWidth, window.innerHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        container.appendChild(renderer.domElement);
-
-        const geometry = new THREE.BufferGeometry();
-        const count = 600;
-        const positions = new Float32Array(count * 3);
-        const colors = new Float32Array(count * 3);
-        const color1 = new THREE.Color(0xff00ff);
-        const color2 = new THREE.Color(0x00e1ff);
-
-        for(let i = 0; i < count; i++) {
-            positions[i * 3] = (Math.random() - 0.5) * 120;
-            positions[i * 3 + 1] = (Math.random() - 0.5) * 120;
-            positions[i * 3 + 2] = (Math.random() - 0.5) * 120;
-            const rand = Math.random();
-            let finalColor = rand < 0.5 ? color1 : color2;
-            colors[i * 3] = finalColor.r;
-            colors[i * 3 + 1] = finalColor.g;
-            colors[i * 3 + 2] = finalColor.b;
-        }
-        geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-        const material = new THREE.PointsMaterial({ size: 0.5, vertexColors: true, transparent: true, opacity: 0.6 });
-        const starField = new THREE.Points(geometry, material);
-        scene.add(starField);
-
-        function animate() {
-            requestAnimationFrame(animate);
-            starField.rotation.y += 0.0005;
-            renderer.render(scene, camera);
-        }
-        animate();
-
-        window.addEventListener('resize', () => {
-            camera.aspect = window.innerWidth / window.innerHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(window.innerWidth, window.innerHeight);
+async function getGPTTitle(text) {
+    try {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: [
+                    { role: "system", content: "Siz sarlavha generatorisiz." },
+                    { role: "user", content: `Matnga mos 2-3 so'zli nom ber. Faqat nomni yoz: "${text.substring(0, 500)}"` }
+                ],
+                max_tokens: 20
+            })
         });
+        const data = await response.json();
+        let title = data.choices?.[0]?.message?.content || "Yangi suhbat";
+        return title.replace(/['"_`*#]/g, '').trim();
+    } catch (e) { return "Suhbat"; }
+}
+
+async function extractTextFromImage(buffer) {
+    if (!OCR_API_KEY) return null;
+    try {
+        const formData = new FormData();
+        formData.append('file', buffer, { filename: 'image.jpg', contentType: 'image/jpeg' });
+        formData.append('apikey', OCR_API_KEY);
+        formData.append('language', 'eng');
+        formData.append('isOverlayRequired', 'false');
+
+        const response = await fetch("https://api.ocr.space/parse/image", { 
+            method: "POST", 
+            body: formData,
+            headers: formData.getHeaders(),
+            duplex: 'half'
+        });
+
+        const data = await response.json();
+        if (data.IsErroredOnProcessing) return null;
+        return data.ParsedResults?.[0]?.ParsedText?.trim() || null;
+    } catch (e) { return null; }
+}
+
+// --- API ROUTES ---
+
+app.get('/api/sessions/:userId', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM chat_sessions WHERE user_id = $1 ORDER BY updated_at DESC", [req.params.userId]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: "DB error" }); }
+});
+
+app.get('/api/messages/:sessionId', async (req, res) => {
+    try {
+        const result = await pool.query("SELECT * FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC", [req.params.sessionId]);
+        res.json(result.rows);
+    } catch (err) { res.status(500).json({ error: "DB error" }); }
+});
+
+app.delete('/api/session/:sessionId', async (req, res) => {
+    try { await pool.query("DELETE FROM chat_sessions WHERE id = $1", [req.params.sessionId]); res.json({ success: true }); } 
+    catch (err) { res.status(500).json({ error: "DB error" }); }
+});
+
+// --- STREAMING CHAT ENDPOINT ---
+app.post('/api/chat', upload.single('file'), async (req, res) => {
+    // Javobni stream sifatida belgilaymiz
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
+    try {
+        const { userId, type, message } = req.body;
+        let { sessionId } = req.body;
+        let isNewSession = false;
+
+        // 1. Sessiyani aniqlash
+        if (!sessionId || sessionId === 'null') {
+            const newSession = await pool.query("INSERT INTO chat_sessions (user_id, title) VALUES ($1, 'Yangi suhbat') RETURNING id", [userId]);
+            sessionId = newSession.rows[0].id;
+            isNewSession = true;
+        }
+
+        // 2. User xabarini tayyorlash
+        let userContent = message || "";
+        if (type === 'image' && req.file) {
+            const ocrText = await extractTextFromImage(req.file.buffer);
+            if (ocrText) userContent = `[Rasm]: ${ocrText}\n\n(Rasm mazmuni bo'yicha javob bering)`;
+            else userContent = "[Rasm yuborildi, lekin matn aniqlanmadi. Umumiy javob bering]";
+        }
+
+        // 3. User xabarini bazaga saqlash (Async, kutib o'tirmaymiz)
+        pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
+
+        // 4. Tarixni olish
+        const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
+        
+        const apiMessages = [
+            { role: "system", content: CONCISE_INSTRUCTION },
+            ...history.rows.map(m => ({ role: m.role, content: m.content })),
+            { role: "user", content: userContent } // Hozirgi xabar
+        ];
+
+        // 5. OpenAI Stream so'rovi
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${OPENAI_API_KEY}`
+            },
+            body: JSON.stringify({
+                model: "gpt-4o-mini",
+                messages: apiMessages,
+                stream: true, // STREAM YOQILDI
+                temperature: 0.7,
+                max_tokens: 800
+            })
+        });
+
+        if (!response.ok) {
+            res.write(`data: ${JSON.stringify({ error: "AI Error" })}\n\n`);
+            res.end();
+            return;
+        }
+
+        // 6. Streamni o'qish va Clientga uzatish
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let fullAIResponse = "";
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value);
+            const lines = chunk.split("\n");
+            
+            for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                    const dataStr = line.replace("data: ", "").trim();
+                    if (dataStr === "[DONE]") break;
+                    
+                    try {
+                        const json = JSON.parse(dataStr);
+                        const token = json.choices[0]?.delta?.content || "";
+                        if (token) {
+                            fullAIResponse += token;
+                            // Tokenni frontendga yuborish
+                            res.write(`data: ${JSON.stringify({ token })}\n\n`);
+                        }
+                    } catch (e) { }
+                }
+            }
+        }
+
+        // 7. Yakuniy ishlar (Sarlavha va Baza)
+        let newTitle = null;
+        if (isNewSession) {
+            newTitle = await getGPTTitle(userContent);
+            await pool.query("UPDATE chat_sessions SET title = $1 WHERE id = $2", [newTitle, sessionId]);
+        }
+
+        // AI javobini bazaga saqlash
+        await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, fullAIResponse]);
+        await pool.query("UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1", [sessionId]);
+
+        // Yakuniy signal yuborish (Session ID va Title bilan)
+        res.write(`data: ${JSON.stringify({ done: true, sessionId, newTitle })}\n\n`);
+        res.end();
+
+    } catch (error) {
+        console.error("Stream Error:", error);
+        res.write(`data: ${JSON.stringify({ error: "Server Error" })}\n\n`);
+        res.end();
     }
-})();
+});
+
+app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
+
