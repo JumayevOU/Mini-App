@@ -9,11 +9,11 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // --- ENV VARS ---
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY; // O'zgardi
 const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL; 
 
-if (!GEMINI_API_KEY) console.error("❌ XATOLIK: GEMINI_API_KEY topilmadi!");
+if (!OPENAI_API_KEY) console.error("❌ XATOLIK: OPENAI_API_KEY topilmadi! Railway Variables bo'limini yangilang.");
 if (!DATABASE_URL) console.error("❌ XATOLIK: DATABASE_URL topilmadi!");
 
 const pool = new Pool({
@@ -33,7 +33,7 @@ const CONCISE_INSTRUCTION =
     "Ortiqcha kirish so'zlarisiz to'g'ridan-to'g'ri javob bering. " +
     "Eng muhimi: Javobingizni har doim mavzuga mos EMOJILAR bilan bezang. 🎨✨";
 
-// --- HELPERS ---
+// --- YORDAMCHI FUNKSIYALAR ---
 function cleanResponse(text) {
     if (!text) return "";
     return text.trim();
@@ -46,49 +46,43 @@ function cleanTitle(text) {
     return cleaned;
 }
 
-async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
-    if (!GEMINI_API_KEY) return "⚠️ API kalit sozlanmagan.";
+// --- OPENAI GPT (GEMINI O'RNIGA) ---
+async function getGPTReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
+    if (!OPENAI_API_KEY) return "⚠️ API kalit sozlanmagan.";
 
     try {
-        // 1.0 Pro modeli uchun System Promptni suhbat ichiga joylaymiz
-        const contents = [
-            {
-                role: 'user',
-                parts: [{ text: systemPrompt }] // Tizim buyrug'i user nomidan
-            },
-            {
-                role: 'model',
-                parts: [{ text: "Tushunarli. Men qisqa va emojilar bilan javob beraman." }] // Model roziligi (priming)
-            },
-            ...messages.map(m => ({
-                role: m.role === 'assistant' ? 'model' : 'user',
-                parts: [{ text: m.content }]
+        // OpenAI formati: system message alohida bo'ladi
+        const apiMessages = [
+            { role: "system", content: systemPrompt },
+            ...messages.map(m => ({ 
+                role: m.role, 
+                content: m.content 
             }))
         ];
 
-        // TUZATISH: 'gemini-pro' modeli (Eng barqaror versiya)
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-pro:generateContent?key=${GEMINI_API_KEY}`;
-        
-        const response = await fetch(url, {
+        const response = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
-            headers: { "Content-Type": "application/json" },
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${OPENAI_API_KEY}`
+            },
             body: JSON.stringify({
-                contents: contents,
-                // systemInstruction olib tashlandi (1.0 da ishlamaydi)
-                generationConfig: { temperature: 0.7, maxOutputTokens: 800 }
+                model: "gpt-4o-mini", // Eng yangi va tezkor mini model
+                messages: apiMessages,
+                temperature: 0.7,
+                max_tokens: 800
             })
         });
         
         const data = await response.json();
         
         if (!response.ok) {
-            console.error("Gemini API Error:", JSON.stringify(data));
-            return "⚠️ AI xatoligi (API kalit yoki Model muammosi).";
+            console.error("OpenAI API Error:", JSON.stringify(data));
+            return "⚠️ AI xatoligi (OpenAI).";
         }
 
-        if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
-            const text = data.candidates[0].content.parts.map(p => p.text).join('');
-            return cleanResponse(text);
+        if (data.choices && data.choices.length > 0) {
+            return cleanResponse(data.choices[0].message.content);
         } else {
             return "⚠️ AI javob bermadi.";
         }
@@ -102,12 +96,14 @@ async function generateTitle(text) {
     try {
         const shortText = text.length > 500 ? text.substring(0, 500) : text;
         const prompt = `Quyidagi matnga mos 2-3 so'zli qisqa nom yoz. Faqat nomni yoz. Matn: "${shortText}"`;
-        // Sarlavha uchun alohida qisqa so'rov
-        const rawTitle = await getGeminiReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
+        
+        // Sarlavha uchun alohida so'rov
+        const rawTitle = await getGPTReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
         return cleanTitle(rawTitle);
     } catch (e) { return "Yangi suhbat"; }
 }
 
+// --- OCR FUNKSIYASI ---
 async function extractTextFromImage(buffer) {
     if (!OCR_API_KEY) return null;
     try {
@@ -188,7 +184,8 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
         const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
         
-        replyText = await getGeminiReply(history.rows, CONCISE_INSTRUCTION);
+        // GPT FUNKSIYASI CHAQIRILADI
+        replyText = await getGPTReply(history.rows, CONCISE_INSTRUCTION);
 
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, replyText]);
 
