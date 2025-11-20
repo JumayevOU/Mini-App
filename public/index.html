@@ -1,11 +1,9 @@
-#public/index.html
 <!DOCTYPE html>
 <html lang="uz">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>ChatGPT AI - Telegram Mini App</title>
-    
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -42,7 +40,6 @@
     <div id="canvas-container"></div>
     <input type="file" id="file-upload" accept="image/*" class="hidden">
 
-    <!-- Sidebar -->
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-72 bg-[#0a0a12]/95 backdrop-blur-xl border-r border-white/10 transform -translate-x-full md:translate-x-0 sidebar-transition flex flex-col shadow-2xl">
         <div class="p-4 flex items-center justify-between border-b border-white/5 h-16 shrink-0">
             <button id="new-chat-btn" class="flex-1 bg-white/5 hover:bg-white/10 border border-white/10 rounded-lg py-3 px-4 text-sm text-left text-white transition-all flex items-center gap-2 group">
@@ -53,12 +50,9 @@
                 <i class="fa-solid fa-xmark text-xl"></i>
             </button>
         </div>
-
         <div class="flex-1 overflow-y-auto p-3 space-y-2" id="chat-history-list">
             <div class="text-center text-gray-500 text-xs mt-10">Tarix yuklanmoqda...</div>
         </div>
-
-        <!-- USER PROFILE SECTION -->
         <div class="p-4 border-t border-white/5 bg-black/20 shrink-0">
             <button id="clear-history" class="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-red-400 hover:bg-white/5 text-sm transition-colors">
                 <i class="fa-solid fa-trash-can"></i>
@@ -66,18 +60,14 @@
             </button>
             <div class="flex items-center gap-3 px-3 py-3 mt-2 border-t border-white/5 pt-3">
                 <div class="w-8 h-8 rounded-full bg-gradient-to-br from-pink-500 to-cyan-500 p-[1px]">
-                    <!-- ID QO'SHILDI: sidebar-user-avatar -->
                     <img id="sidebar-user-avatar" src="https://api.dicebear.com/7.x/avataaars/svg?seed=User" class="rounded-full bg-black w-full h-full object-cover" alt="User">
                 </div>
-                <!-- ID QO'SHILDI: sidebar-user-name -->
                 <div id="sidebar-user-name" class="text-xs font-medium text-gray-300">Foydalanuvchi</div>
             </div>
         </div>
     </aside>
-
     <div id="sidebar-overlay" class="fixed inset-0 bg-black/80 z-40 hidden backdrop-blur-sm"></div>
 
-    <!-- Main App -->
     <div class="relative z-10 flex-1 flex flex-col h-full md:ml-72 transition-all duration-300 w-full">
         
         <header class="h-16 px-4 flex justify-between items-center relative z-20 glass-panel shrink-0">
