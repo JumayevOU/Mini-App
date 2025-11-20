@@ -46,7 +46,7 @@ function toggleWelcome(show) {
     if (show) {
         els.welcomeScreen.classList.remove('hidden');
         els.messagesList.innerHTML = '';
-        els.chatTitle.textContent = 'ChatGPT AI';
+        // Sarlavhani o'zgartirmaymiz, u static
     } else {
         els.welcomeScreen.classList.add('hidden');
     }
@@ -150,7 +150,9 @@ async function loadSessions() {
 
 async function loadChat(sessionId, title) {
     currentSessionId = sessionId;
-    els.chatTitle.textContent = title || 'Chat';
+    // BU YERDA O'ZGARISH: Header sarlavhasini o'zgartirmaymiz
+    // els.chatTitle.textContent = title || 'Chat';
+    
     toggleSidebar(false);
     toggleWelcome(false);
     els.messagesList.innerHTML = '<div class="flex justify-center py-8"><i class="fa-solid fa-circle-notch fa-spin text-[#00ffff] text-2xl"></i></div>';
@@ -205,14 +207,11 @@ async function sendMessage(text, type = 'text', file = null) {
         hideTyping();
         if (data.success) {
             appendMessage(data.response, 'assistant');
-            // Agar yangi sarlavha kelgan bo'lsa, darhol yangilaymiz
-            if (data.newTitle) {
+            // BU YERDA O'ZGARISH: Sarlavha o'zgartirishni olib tashlaymiz
+            if (currentSessionId !== data.sessionId || data.newTitle) {
                 currentSessionId = data.sessionId;
-                els.chatTitle.textContent = data.newTitle; // Headerdagi nomni yangilash
-                loadSessions(); // Sidebarni yangilash
-            } else if (currentSessionId !== data.sessionId) {
-                currentSessionId = data.sessionId;
-                loadSessions();
+                // els.chatTitle.textContent = data.newTitle; // Olib tashlandi
+                loadSessions(); // Sidebar yangilanadi
             }
         } else {
             appendMessage("Xatolik: " + data.response, 'assistant');
