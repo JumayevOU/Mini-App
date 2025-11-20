@@ -1,47 +1,60 @@
-body, html {
-    margin: 0;
-    padding: 0;
-    height: 100%;
-    overflow: hidden;
-    background-color: #050509;
-    color: #ffffff;
-    -webkit-tap-highlight-color: transparent;
+/* --- NEON THEME VARIABLES (Restored) --- */
+:root {
+    --bg-main: #050509;
+    --bg-panel: #0a0a12;
+    --text: #ffffff;
+    --accent-neon: #d946ef;
+    --accent-cyan: #00ffff;
 }
 
+* { box-sizing: border_box; -webkit-tap-highlight-color: transparent; }
+
+body {
+    background-color: var(--bg-main);
+    color: var(--text);
+}
+
+/* --- SCROLLBAR --- */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { 
-    background: linear-gradient(to bottom, #d946ef, #06b6d4); 
+    background: linear-gradient(to bottom, var(--accent-neon), var(--accent-cyan)); 
     border-radius: 10px; 
 }
 
-.glass-panel {
-    background: rgba(15, 15, 25, 0.8);
-    backdrop-filter: blur(12px);
-    -webkit-backdrop-filter: blur(12px);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    box-shadow: 0 4px 30px rgba(0, 0, 0, 0.3);
+/* --- ANIMATIONS --- */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+.animate-spin-slow { animation: spin 10s linear infinite; }
+
+@keyframes pulseGlow {
+    0%, 100% { filter: drop-shadow(0 0 5px rgba(217, 70, 239, 0.5)); }
+    50% { filter: drop-shadow(0 0 15px rgba(6, 182, 212, 0.8)); }
+}
+.animate-pulse-slow { animation: pulseGlow 3s ease-in-out infinite; }
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.animate-slide-in { animation: slideIn 0.3s ease-out forwards; }
+
+/* --- NEW: TEXT SHIMMER ANIMATION --- */
+@keyframes textShine {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
 }
 
-.glass-input {
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(10px);
-    transition: all 0.3s ease;
-}
-.glass-input:focus-within {
-    border-color: #d946ef;
-    background: rgba(255, 255, 255, 0.08);
-    box-shadow: 0 0 15px rgba(217, 70, 239, 0.2);
-}
-
-.animated-title {
+.animate-text-shimmer {
     background: linear-gradient(
         to right,
-        #ff00ff 20%,
+        #d946ef 20%,
         #00ffff 40%,
         #ffffff 60%,
-        #ff00ff 80%
+        #d946ef 80%
     );
     background-size: 200% auto;
     color: #fff;
@@ -49,44 +62,20 @@ body, html {
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     animation: textShine 3s linear infinite;
+    font-weight: 800; /* Extra Bold */
+    letter-spacing: 0.05em;
+    filter: drop-shadow(0 0 10px rgba(217, 70, 239, 0.4));
 }
 
-@keyframes textShine {
-    0% { background-position: 0% 50% }
-    100% { background-position: 100% 50% }
-}
+/* --- SAFARI FIXES --- */
+.pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
 
-.logo-path {
-    transform-origin: center;
-    animation: breathe 4s ease-in-out infinite alternate;
+/* --- CODE BLOCKS --- */
+pre {
+    background: #1e1e24 !important;
+    padding: 10px;
+    border-radius: 8px;
+    overflow-x: auto;
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
-@keyframes breathe {
-    0% { transform: scale(1); stroke-width: 0; }
-    100% { transform: scale(1.05); stroke-width: 1; }
-}
-
-@keyframes pulseGlow {
-    0%, 100% { filter: drop-shadow(0 0 5px rgba(217, 70, 239, 0.5)); }
-    50% { filter: drop-shadow(0 0 15px rgba(6, 182, 212, 0.8)); }
-}
-.animate-pulse-glow {
-    animation: pulseGlow 3s ease-in-out infinite;
-}
-
-.animate-spin-slow {
-    animation: spin 10s linear infinite;
-}
-
-#canvas-container {
-    position: fixed;
-    top: 0; left: 0; width: 100%; height: 100%;
-    z-index: 0;
-}
-
-.sidebar-transition {
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-#sidebar-overlay {
-    transition: opacity 0.3s ease;
-}
+code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; }
