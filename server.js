@@ -55,8 +55,8 @@ async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
             parts: [{ text: m.content }]
         }));
 
-        // MODEL NOMI O'ZGARTIRILDI: gemini-1.5-flash-latest
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${GEMINI_API_KEY}`;
+        // TUZATISH: Model nomi aniq 'gemini-1.5-flash' bo'lishi kerak
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
         
         const response = await fetch(url, {
             method: "POST",
@@ -71,9 +71,8 @@ async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
         const data = await response.json();
         
         if (!response.ok) {
-            console.error("Gemini Error:", JSON.stringify(data));
-            // Fallback: Agar flash ishlamasa, pro ga urinib ko'rish mumkin (ixtiyoriy)
-            return "⚠️ AI xatoligi (Model topilmadi).";
+            console.error("Gemini API Error:", JSON.stringify(data));
+            return "⚠️ AI xatoligi.";
         }
 
         if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
@@ -176,6 +175,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
 
         const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
+        
         replyText = await getGeminiReply(history.rows, CONCISE_INSTRUCTION);
 
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, replyText]);
