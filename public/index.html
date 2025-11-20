@@ -10,24 +10,20 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/style.css">
-    
     <style>
-        html, body {
-            height: 100%;
-            height: 100dvh; /* Dynamic Viewport Height */
-            overflow: hidden;
-            overscroll-behavior: none; /* Pull-to-refresh ni o'chirish */
-        }
-        
-        .pb-safe {
-            padding-bottom: env(safe-area-inset-bottom, 20px);
-        }
+        html, body { height: 100dvh; overflow: hidden; overscroll-behavior: none; }
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
     </style>
 </head>
 <body class="bg-[#050509] text-white font-sans flex overflow-hidden relative selection:bg-[#d946ef] selection:text-white">
+
+    <!-- 3D Background -->
     <div id="canvas-container" class="fixed inset-0 z-0 pointer-events-none opacity-60"></div>
     <input type="file" id="file-upload" accept="image/*" class="hidden">
+
+    <!-- SIDEBAR -->
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-[280px] bg-[#0a0a12]/95 backdrop-blur-2xl border-r border-white/10 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out flex flex-col h-full shadow-[4px_0_24px_rgba(0,0,0,0.4)]">
+        
         <div class="p-4 h-16 shrink-0 flex items-center justify-between border-b border-white/5">
             <button id="new-chat-btn" class="flex-1 bg-gradient-to-r from-[#d946ef] to-[#8b5cf6] hover:opacity-90 active:scale-95 transition-all rounded-xl py-3 px-4 text-sm font-bold text-white shadow-lg flex items-center justify-center gap-2 border border-white/10">
                 <i class="fa-solid fa-plus"></i> <span>Yangi Chat</span>
@@ -36,43 +32,45 @@
                 <i class="fa-solid fa-xmark text-xl"></i>
             </button>
         </div>
-        <div id="chat-history-list" class="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-        </div>
+
+        <!-- Chat History -->
+        <div id="chat-history-list" class="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"></div>
+
+        <!-- User Profile -->
         <div class="p-4 border-t border-white/5 bg-black/20 shrink-0 pb-safe">
-            <button id="clear-history" class="w-full flex items-center gap-3 px-3 py-3 rounded-xl text-red-400 hover:bg-white/5 text-sm transition-colors mb-2">
-                <i class="fa-solid fa-trash-can"></i>
-                <span>Tarixni tozalash</span>
-            </button>
             <div class="flex items-center gap-3 px-2 pt-2">
                 <div class="w-10 h-10 rounded-full p-[1px] bg-gradient-to-tr from-[#d946ef] to-[#00ffff]">
-                    <img id="user-avatar" src="" class="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#0a0a12]">
+                    <img id="user-avatar" src="" class="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#0a0a12]" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=guest'">
                 </div>
                 <div class="overflow-hidden">
                     <div id="user-name" class="text-sm font-semibold truncate text-gray-100">User</div>
-                    <div class="text-[10px] text-gray-400 flex items-center gap-1">
-                        <span class="w-1.5 h-1.5 bg-green-500 rounded-full"></span> Online
-                    </div>
+                    <div id="user-status" class="text-[10px] text-gray-400">ID: ---</div>
                 </div>
             </div>
         </div>
     </aside>
+
     <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-30 hidden backdrop-blur-[2px] transition-opacity duration-300 md:hidden"></div>
+
+    <!-- MAIN CONTENT -->
     <div class="relative z-10 flex-1 flex flex-col h-full w-full md:pl-[280px] transition-all duration-300">
+        
+        <!-- HEADER -->
         <header class="h-16 px-4 flex items-center justify-between bg-[#050509]/80 backdrop-blur-md border-b border-white/5 shrink-0 z-20 sticky top-0">
             <div class="flex items-center gap-3 overflow-hidden">
                 <button id="toggle-sidebar" class="md:hidden p-2 -ml-2 text-gray-300 hover:text-white active:scale-90 transition-transform">
                     <i class="fa-solid fa-bars text-xl"></i>
                 </button>
-                <div class="flex flex-col">
-                    <h1 id="chat-title" class="font-orbitron text-lg md:text-xl font-bold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-[#d946ef] via-[#a855f7] to-[#00ffff] truncate max-w-[200px] sm:max-w-md">
-                        ChatGPT AI
-                    </h1>
-                </div>
+                <h1 id="chat-title" class="font-orbitron text-lg md:text-xl font-bold tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-[#d946ef] via-[#a855f7] to-[#00ffff] truncate max-w-[200px] sm:max-w-md">
+                    ChatGPT AI
+                </h1>
             </div>
             <div class="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/5">
                 <i class="fa-solid fa-robot text-[#00ffff] text-sm animate-pulse"></i>
             </div>
         </header>
+
+        <!-- CHAT CONTAINER -->
         <main id="chat-container" class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-5 scroll-smooth w-full max-w-4xl mx-auto">
             <div id="welcome-screen" class="h-full flex flex-col items-center justify-center transition-all duration-500 min-h-[300px]">
                 <div class="w-28 h-28 md:w-36 md:h-36 mb-6 relative animate-pulse-slow">
@@ -91,23 +89,11 @@
                 </div>
                 <h2 class="text-2xl md:text-3xl font-bold text-center text-white mb-2 font-orbitron">Qanday yordam bera olaman?</h2>
                 <p class="text-gray-400 text-sm mb-8 text-center max-w-xs">Men sizning shaxsiy AI yordamchingizman.</p>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-lg px-4">
-                    <button class="suggestion-btn bg-[#1a1a23]/80 hover:bg-[#252530] border border-white/10 p-4 rounded-xl text-left text-sm text-gray-300 transition-all hover:border-[#d946ef]/50 hover:-translate-y-0.5 group">
-                        <div class="flex items-center gap-3">
-                            <span class="bg-white/5 p-2 rounded-lg text-[#d946ef] group-hover:text-white transition-colors"><i class="fa-solid fa-code"></i></span>
-                            <span>Telegram bot kodini yozish</span>
-                        </div>
-                    </button>
-                    <button class="suggestion-btn bg-[#1a1a23]/80 hover:bg-[#252530] border border-white/10 p-4 rounded-xl text-left text-sm text-gray-300 transition-all hover:border-[#00ffff]/50 hover:-translate-y-0.5 group">
-                        <div class="flex items-center gap-3">
-                            <span class="bg-white/5 p-2 rounded-lg text-[#00ffff] group-hover:text-white transition-colors"><i class="fa-solid fa-image"></i></span>
-                            <span>Rasm generatsiya g'oyalari</span>
-                        </div>
-                    </button>
-                </div>
             </div>
             <div id="messages-list" class="pb-4 space-y-5 min-h-0"></div>
         </main>
+
+        <!-- INPUT AREA -->
         <footer class="p-3 md:p-5 bg-[#050509] border-t border-white/5 shrink-0 pb-safe z-20">
             <div class="max-w-4xl mx-auto relative">
                 <form id="chat-form" class="bg-[#15151c] border border-white/10 rounded-2xl p-1.5 flex items-end shadow-2xl transition-all focus-within:border-[#d946ef]/50 focus-within:bg-[#1a1a23] ring-0 focus-within:ring-1 focus-within:ring-[#d946ef]/20">
@@ -124,9 +110,6 @@
                         <i class="fa-solid fa-arrow-up text-lg font-bold"></i>
                     </button>
                 </form>
-                <div class="text-center mt-2 hidden sm:block">
-                    <p class="text-[10px] text-gray-600">AI xato qilishi mumkin. Muhim ma'lumotlarni tekshiring.</p>
-                </div>
             </div>
         </footer>
     </div>
