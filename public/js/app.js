@@ -1,7 +1,6 @@
 const tg = window.Telegram.WebApp;
 tg.ready();
 tg.expand();
-// Neon tema ranglari
 tg.setHeaderColor('#050509'); 
 tg.setBackgroundColor('#050509');
 
@@ -26,7 +25,6 @@ const els = {
     userStatus: document.getElementById('user-status')
 };
 
-// --- PROFILNI YUKLASH ---
 function loadUserProfile() {
     const user = tg.initDataUnsafe?.user;
     if (user) {
@@ -44,7 +42,6 @@ function loadUserProfile() {
     }
 }
 
-// --- UI FUNKSIYALARI ---
 function toggleWelcome(show) {
     if (show) {
         els.welcomeScreen.classList.remove('hidden');
@@ -60,11 +57,8 @@ function scrollToBottom() {
 }
 
 function formatMessage(content) {
-    // Kod bloklarini ajratib ko'rsatish uchun (Neon style)
     content = content.replace(/```([\s\S]*?)```/g, '<pre class="bg-[#0a0a12] p-3 rounded-lg my-2 overflow-x-auto border border-white/10 shadow-inner"><code class="text-sm font-mono text-[#00ffff]">$1</code></pre>');
-    // Qalin matn
     content = content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">$1</strong>');
-    // Inline kod
     content = content.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-[#d946ef] border border-white/5">$1</code>');
     return content.replace(/\n/g, '<br>');
 }
@@ -85,9 +79,6 @@ function appendMessage(content, role, type = 'text', animate = true) {
         innerContent = `<div class="flex items-center gap-2 text-sm font-medium italic text-gray-300"><i class="fa-regular fa-image text-[#00ffff]"></i> Rasm yuborildi</div>`;
     }
 
-    // YANGI KREATIV DIZAYN:
-    // User: Neon Gradient (Binafsha -> Pushti) + Yengil nur (Glow)
-    // AI: To'q fon + Chap tomonda Havorang (Cyan) chiziq (Accent Border)
     const bubbleClass = isUser 
         ? 'bg-gradient-to-r from-[#7c3aed] to-[#db2777] text-white shadow-[0_4px_15px_rgba(124,58,237,0.3)] border border-white/10 rounded-2xl rounded-tr-none' 
         : 'bg-[#111116] text-gray-200 shadow-md border border-white/5 rounded-2xl rounded-tl-none border-l-[3px] border-l-[#00ffff]';
@@ -110,9 +101,7 @@ function showTyping() {
     const div = document.createElement('div');
     div.id = 'typing-indicator';
     div.className = 'flex items-end gap-3 animate-pulse pl-0';
-    
     const avatar = `<div class="w-9 h-9 rounded-xl bg-[#0a0a12] border border-white/10 flex items-center justify-center shrink-0 shadow-lg shadow-[#00ffff]/10"><i class="fa-solid fa-robot text-[#00ffff] text-sm"></i></div>`;
-    
     div.innerHTML = `
         ${avatar}
         <div class="bg-[#111116] border border-white/5 border-l-[3px] border-l-[#00ffff] p-4 rounded-2xl rounded-tl-none w-fit shadow-md flex gap-1.5 items-center h-[50px]">
@@ -130,7 +119,6 @@ function hideTyping() {
     if (el) el.remove();
 }
 
-// --- API INTERACTIONS ---
 async function loadSessions() {
     try {
         const res = await fetch(`/api/sessions/${currentUserId}`);
@@ -140,13 +128,11 @@ async function loadSessions() {
         sessions.forEach(session => {
             const btn = document.createElement('button');
             const isActive = currentSessionId === session.id;
-            
             btn.className = `w-full text-left p-3 rounded-xl mb-1.5 transition-all flex items-center gap-3 group border border-transparent active:scale-95 ${
                 isActive 
                 ? 'bg-white/10 text-white border-white/5 shadow-[0_0_10px_rgba(0,255,255,0.1)]' 
                 : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
             }`;
-            
             btn.innerHTML = `
                 <i class="fa-regular fa-message text-xs ${isActive ? 'text-[#00ffff]' : 'opacity-50'}"></i> 
                 <span class="truncate flex-1 text-sm font-medium">${session.title || 'Suhbat'}</span>
@@ -154,12 +140,9 @@ async function loadSessions() {
                     <i class="fa-solid fa-trash text-[10px]"></i>
                 </div>
             `;
-            
             btn.onclick = () => loadChat(session.id, session.title);
-            
             const delBtn = btn.querySelector('.delete-btn');
             delBtn.onclick = (e) => { e.stopPropagation(); deleteSession(session.id); };
-            
             els.chatHistoryList.appendChild(btn);
         });
     } catch (e) { console.error(e); }
@@ -222,9 +205,13 @@ async function sendMessage(text, type = 'text', file = null) {
         hideTyping();
         if (data.success) {
             appendMessage(data.response, 'assistant');
-            if (currentSessionId !== data.sessionId || data.newTitle) {
+            // Agar yangi sarlavha kelgan bo'lsa, darhol yangilaymiz
+            if (data.newTitle) {
                 currentSessionId = data.sessionId;
-                if (data.newTitle) els.chatTitle.textContent = data.newTitle;
+                els.chatTitle.textContent = data.newTitle; // Headerdagi nomni yangilash
+                loadSessions(); // Sidebarni yangilash
+            } else if (currentSessionId !== data.sessionId) {
+                currentSessionId = data.sessionId;
                 loadSessions();
             }
         } else {
@@ -237,12 +224,10 @@ async function sendMessage(text, type = 'text', file = null) {
     isTyping = false;
 }
 
-// --- HANDLERS ---
 function toggleSidebar(show) {
     if (show) {
         els.sidebar.classList.remove('-translate-x-full');
         els.sidebarOverlay.classList.remove('hidden');
-        // Fade in animation for overlay
         requestAnimationFrame(() => els.sidebarOverlay.classList.remove('opacity-0'));
     } else {
         els.sidebar.classList.add('-translate-x-full');
@@ -288,7 +273,6 @@ els.fileInput.onchange = (e) => {
 };
 document.getElementById('upload-btn').onclick = () => els.fileInput.click();
 
-// --- INIT (3D Background) ---
 (function init() {
     loadUserProfile();
     loadSessions();
