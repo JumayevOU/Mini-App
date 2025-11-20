@@ -60,12 +60,12 @@ function scrollToBottom() {
 }
 
 function formatMessage(content) {
-    // Kod bloklarini ajratib ko'rsatish uchun
-    content = content.replace(/```([\s\S]*?)```/g, '<pre class="bg-black/30 p-3 rounded-lg my-2 overflow-x-auto border border-white/10"><code class="text-sm font-mono text-blue-300">$1</code></pre>');
+    // Kod bloklarini ajratib ko'rsatish uchun (Neon style)
+    content = content.replace(/```([\s\S]*?)```/g, '<pre class="bg-[#0a0a12] p-3 rounded-lg my-2 overflow-x-auto border border-white/10 shadow-inner"><code class="text-sm font-mono text-[#00ffff]">$1</code></pre>');
     // Qalin matn
-    content = content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>');
+    content = content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold drop-shadow-[0_0_5px_rgba(255,255,255,0.3)]">$1</strong>');
     // Inline kod
-    content = content.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-yellow-300">$1</code>');
+    content = content.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-[#d946ef] border border-white/5">$1</code>');
     return content.replace(/\n/g, '<br>');
 }
 
@@ -75,27 +75,31 @@ function appendMessage(content, role, type = 'text', animate = true) {
     div.className = `flex items-end gap-3 ${isUser ? 'flex-row-reverse' : ''} ${animate ? 'animate-slide-in' : ''}`;
     
     const avatar = isUser 
-        ? `<div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center shrink-0 shadow-lg border border-white/10"><i class="fa-solid fa-user text-xs text-white"></i></div>`
-        : `<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#d946ef] to-[#00e1ff] flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/20"><i class="fa-solid fa-robot text-white text-xs"></i></div>`;
+        ? `<div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#7c3aed] to-[#db2777] flex items-center justify-center shrink-0 shadow-lg border border-white/10"><i class="fa-solid fa-user text-xs text-white"></i></div>`
+        : `<div class="w-9 h-9 rounded-xl bg-[#0a0a12] border border-white/10 flex items-center justify-center shrink-0 shadow-lg shadow-[#00ffff]/10"><i class="fa-solid fa-robot text-[#00ffff] text-sm"></i></div>`;
 
     let innerContent = '';
     if (type === 'text') {
-        // Matnni yaqqolroq qilish uchun font-medium va text-[15px] qo'shildi
-        innerContent = `<div class="leading-relaxed text-[15px] font-medium whitespace-pre-wrap">${formatMessage(content)}</div>`;
+        innerContent = `<div class="leading-relaxed text-[15px] font-medium whitespace-pre-wrap tracking-wide">${formatMessage(content)}</div>`;
     } else if (type === 'image') {
-        innerContent = `<div class="flex items-center gap-2 text-sm font-medium italic text-gray-300"><i class="fa-regular fa-image text-blue-400"></i> Rasm yuborildi</div>`;
+        innerContent = `<div class="flex items-center gap-2 text-sm font-medium italic text-gray-300"><i class="fa-regular fa-image text-[#00ffff]"></i> Rasm yuborildi</div>`;
     }
 
-    // Bubble dizayni yangilandi: Fon ranglari to'qroq va aniqroq, soyalar qo'shildi
+    // YANGI KREATIV DIZAYN:
+    // User: Neon Gradient (Binafsha -> Pushti) + Yengil nur (Glow)
+    // AI: To'q fon + Chap tomonda Havorang (Cyan) chiziq (Accent Border)
     const bubbleClass = isUser 
-        ? 'bg-blue-600 text-white shadow-lg shadow-blue-900/30 border border-blue-500/30 rounded-tr-none' 
-        : 'bg-[#1e293b] text-slate-100 shadow-md border border-white/10 rounded-tl-none';
+        ? 'bg-gradient-to-r from-[#7c3aed] to-[#db2777] text-white shadow-[0_4px_15px_rgba(124,58,237,0.3)] border border-white/10 rounded-2xl rounded-tr-none' 
+        : 'bg-[#111116] text-gray-200 shadow-md border border-white/5 rounded-2xl rounded-tl-none border-l-[3px] border-l-[#00ffff]';
 
     div.innerHTML = `
         ${avatar}
-        <div class="${bubbleClass} p-3.5 rounded-2xl max-w-[85%] min-w-[60px] relative group">
+        <div class="${bubbleClass} p-4 min-w-[60px] max-w-[85%] relative group transition-all hover:shadow-xl">
             ${innerContent}
-            <div class="text-[10px] opacity-60 text-right mt-1 font-mono">${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div>
+            <div class="text-[10px] opacity-50 text-right mt-1.5 font-mono tracking-wider flex items-center justify-end gap-1">
+                ${isUser ? '<i class="fa-solid fa-check text-[9px]"></i>' : ''} 
+                ${new Date().toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}
+            </div>
         </div>
     `;
     els.messagesList.appendChild(div);
@@ -105,16 +109,15 @@ function appendMessage(content, role, type = 'text', animate = true) {
 function showTyping() {
     const div = document.createElement('div');
     div.id = 'typing-indicator';
-    div.className = 'flex items-end gap-3 animate-pulse pl-0'; // padding removed for better alignment
+    div.className = 'flex items-end gap-3 animate-pulse pl-0';
     
-    // AI Avatar for typing
-    const avatar = `<div class="w-8 h-8 rounded-lg bg-gradient-to-br from-[#d946ef] to-[#00e1ff] flex items-center justify-center shrink-0 shadow-lg"><i class="fa-solid fa-robot text-white text-xs"></i></div>`;
+    const avatar = `<div class="w-9 h-9 rounded-xl bg-[#0a0a12] border border-white/10 flex items-center justify-center shrink-0 shadow-lg shadow-[#00ffff]/10"><i class="fa-solid fa-robot text-[#00ffff] text-sm"></i></div>`;
     
     div.innerHTML = `
         ${avatar}
-        <div class="bg-[#1e293b] border border-white/10 p-3.5 rounded-2xl rounded-tl-none w-fit shadow-md flex gap-1.5 items-center h-[46px]">
-             <div class="w-2 h-2 bg-[#d946ef] rounded-full animate-bounce"></div>
-             <div class="w-2 h-2 bg-[#00ffff] rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
+        <div class="bg-[#111116] border border-white/5 border-l-[3px] border-l-[#00ffff] p-4 rounded-2xl rounded-tl-none w-fit shadow-md flex gap-1.5 items-center h-[50px]">
+             <div class="w-2 h-2 bg-[#00ffff] rounded-full animate-bounce"></div>
+             <div class="w-2 h-2 bg-[#d946ef] rounded-full animate-bounce" style="animation-delay: 0.15s"></div>
              <div class="w-2 h-2 bg-white rounded-full animate-bounce" style="animation-delay: 0.3s"></div>
         </div>
     `;
@@ -137,10 +140,10 @@ async function loadSessions() {
         sessions.forEach(session => {
             const btn = document.createElement('button');
             const isActive = currentSessionId === session.id;
-            // Sidebar item dizayni ham biroz kuchaytirildi
-            btn.className = `w-full text-left p-3 rounded-xl mb-1.5 transition-all flex items-center gap-3 group border border-transparent ${
+            
+            btn.className = `w-full text-left p-3 rounded-xl mb-1.5 transition-all flex items-center gap-3 group border border-transparent active:scale-95 ${
                 isActive 
-                ? 'bg-white/10 text-white border-white/5 shadow-sm' 
+                ? 'bg-white/10 text-white border-white/5 shadow-[0_0_10px_rgba(0,255,255,0.1)]' 
                 : 'text-gray-400 hover:bg-white/5 hover:text-gray-200'
             }`;
             
@@ -167,7 +170,7 @@ async function loadChat(sessionId, title) {
     els.chatTitle.textContent = title || 'Chat';
     toggleSidebar(false);
     toggleWelcome(false);
-    els.messagesList.innerHTML = '<div class="flex justify-center py-8"><i class="fa-solid fa-circle-notch fa-spin text-[#00ffff] text-xl"></i></div>';
+    els.messagesList.innerHTML = '<div class="flex justify-center py-8"><i class="fa-solid fa-circle-notch fa-spin text-[#00ffff] text-2xl"></i></div>';
     loadSessions();
 
     try {
