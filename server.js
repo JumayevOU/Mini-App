@@ -26,27 +26,18 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- SYSTEM PROMPT ---
 const CONCISE_INSTRUCTION = 
     "Siz foydali yordamchisiz. Javoblaringiz qisqa, lo'nda va aniq bo'lsin. Ortiqcha kirish so'zlarisiz to'g'ridan-to'g'ri javob bering.";
-
-// --- YORDAMCHI FUNKSIYALAR ---
 
 function cleanResponse(text) {
     if (!text) return "";
     return text.replace(/^###\s*/gm, '').trim();
 }
 
-/**
- * Sarlavhani tozalash
- * Qo'shtirnoq va ortiqcha belgilarni olib tashlaydi
- */
 function cleanTitle(text) {
     if (!text) return "Suhbat";
-    // Faqat xavfsiz belgilarni qoldiramiz
     let cleaned = text.replace(/['"_`*#\[\]\(\)<>]/g, '').trim();
-    // Agar sarlavha juda uzun bo'lsa, uni qisqartiramiz
-    if (cleaned.length > 40) cleaned = cleaned.substring(0, 40) + "...";
+    if (cleaned.length > 30) cleaned = cleaned.substring(0, 30) + "...";
     return cleaned;
 }
 
@@ -68,37 +59,15 @@ async function getMistralReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
     } catch (error) { return "AI xatosi."; }
 }
 
-/**
- * MUHIM: Aqlli Sarlavha Generatori
- */
 async function generateTitle(text) {
-    // 1. Fallback sarlavha (User yozgan matnning boshlanishi)
-    // Agar AI ishlamasa yoki sekin bo'lsa, shuni ishlatamiz.
-    let fallbackTitle = text.substring(0, 30).trim();
-    if (text.length > 30) fallbackTitle += "...";
-    
     try {
-        // 2. AI ga so'rov
-        const prompt = `Quyidagi xabar mazmuniga mos keladigan juda qisqa (maksimum 3-4 so'z) sarlavha yoz. 
-        Sarlavha o'zbek tilida bo'lsin. Hech qanday qo'shtirnoq, nuqta yoki izoh yozma. Faqat sarlavha.
-        
-        Xabar: "${text}"`;
-        
+        const prompt = `Matnga mos 2-3 so'zli qisqa nom yoz. Faqat nomni yoz. Matn: "${text}"`;
         const rawTitle = await getMistralReply([{ role: 'user', content: prompt }], "Siz sarlavha generatorisiz.");
-        
-        // Agar AI bo'sh yoki xato qaytarsa, fallback ishlatamiz
-        if (!rawTitle || rawTitle.includes("AI xatosi") || rawTitle.length < 2) {
-            return cleanTitle(fallbackTitle);
-        }
-
         return cleanTitle(rawTitle);
-
-    } catch (e) {
-        // Xatolik bo'lsa ham, "Yangi suhbat" demaymiz, user matnini qo'yamiz
-        return cleanTitle(fallbackTitle);
-    }
+    } catch (e) { return "Yangi suhbat"; }
 }
 
+// --- TUZATILGAN OCR FUNKSIYASI ---
 async function extractTextFromImage(buffer) {
     if (!OCR_API_KEY) return null;
     try {
@@ -107,14 +76,29 @@ async function extractTextFromImage(buffer) {
         formData.append('apikey', OCR_API_KEY);
         formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
-        const response = await fetch("https://api.ocr.space/parse/image", { method: "POST", body: formData });
+
+        // MUHIM TUZATISH: headers: formData.getHeaders() qo'shildi
+        const response = await fetch("https://api.ocr.space/parse/image", { 
+            method: "POST", 
+            body: formData,
+            headers: {
+                ...formData.getHeaders() // Boundary headerlarini to'g'ri qo'yish uchun
+            }
+        });
+        
         const data = await response.json();
-        if (data.IsErroredOnProcessing) return "❌ OCR xatosi";
-        return data.ParsedResults?.[0]?.ParsedText?.trim() || "Matn topilmadi";
-    } catch (e) { return "❌ OCR xatosi"; }
+        if (data.IsErroredOnProcessing) {
+            console.error("OCR API Error:", data.ErrorMessage);
+            return "❌ Rasm o'qilmadi (OCR xatosi).";
+        }
+        return data.ParsedResults?.[0]?.ParsedText?.trim() || "Rasmda matn topilmadi.";
+    } catch (e) { 
+        console.error("OCR Fetch Error:", e);
+        return "❌ Server xatosi (OCR)."; 
+    }
 }
 
-// --- API ROUTES ---
+// --- ROUTELAR ---
 
 app.get('/api/sessions/:userId', async (req, res) => {
     try {
@@ -152,7 +136,6 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         let replyText = "";
         let sessionTitle = null;
 
-        // 1. Sessiya yaratish
         if (!sessionId || sessionId === 'null') {
             try {
                 const newSession = await pool.query("INSERT INTO chat_sessions (user_id, title) VALUES ($1, 'Yangi suhbat') RETURNING id", [userId]);
@@ -160,28 +143,24 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             } catch (dbErr) { return res.json({ success: false, response: "Sessiya xatosi." }); }
         }
 
-        // 2. User xabarini yozish
         let userContent = message || "";
+        
+        // Rasm logikasi
         if (type === 'image' && req.file) {
             const ocrText = await extractTextFromImage(req.file.buffer);
-            userContent = `[Rasm]: ${ocrText}`;
+            userContent = `[Rasm yuborildi]\nAniqlangan matn: ${ocrText}`;
+            
         }
 
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
 
-        // 3. AI Javobi
         const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
         replyText = await getMistralReply(history.rows, CONCISE_INSTRUCTION);
 
         await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, replyText]);
 
-        // 4. AVTO-SARLAVHA (Optimallashtirilgan)
-        // Har safar birinchi xabar yozilganda yoki sarlavha "Yangi suhbat" bo'lsa, uni yangilaymiz
         const sessionCheck = await pool.query("SELECT title FROM chat_sessions WHERE id = $1", [sessionId]);
-        
-        // Agar bu birinchi xabar bo'lsa yoki sarlavha hali ham default bo'lsa
         if (sessionCheck.rows[0].title === 'Yangi suhbat') {
-            // Sarlavha generatsiya qilamiz (AI yoki Fallback)
             sessionTitle = await generateTitle(userContent);
             await pool.query("UPDATE chat_sessions SET title = $1 WHERE id = $2", [sessionTitle, sessionId]);
         }
@@ -189,7 +168,10 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         await pool.query("UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1", [sessionId]);
 
         res.json({ success: true, response: replyText, sessionId: sessionId, newTitle: sessionTitle });
-    } catch (error) { res.json({ success: false, response: "Server xatosi." }); }
+    } catch (error) { 
+        console.error(error);
+        res.json({ success: false, response: "Server xatosi." }); 
+    }
 });
 
 app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
