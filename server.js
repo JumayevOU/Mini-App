@@ -55,8 +55,8 @@ async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
             parts: [{ text: m.content }]
         }));
 
-        // TUZATISH: Model nomi aniq 'gemini-1.5-flash' (latest qo'shimchasisiz)
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+        // TUZATISH: Model nomi 'gemini-1.5-flash-001' ga o'zgartirildi (Eng barqaror versiya)
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-001:generateContent?key=${GEMINI_API_KEY}`;
         
         const response = await fetch(url, {
             method: "POST",
@@ -72,7 +72,8 @@ async function getGeminiReply(messages, systemPrompt = CONCISE_INSTRUCTION) {
         
         if (!response.ok) {
             console.error("Gemini API Error:", JSON.stringify(data));
-            return "⚠️ AI xatoligi (Model topilmadi yoki Kalit xato).";
+            // Agar flash ishlamasa, 1.0 pro ga fallback qilishimiz mumkin, lekin hozircha flash-001 ni sinab ko'ramiz
+            return "⚠️ AI xatoligi (Model topilmadi yoki mintaqaviy cheklov).";
         }
 
         if (data.candidates && data.candidates.length > 0 && data.candidates[0].content) {
