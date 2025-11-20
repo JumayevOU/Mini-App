@@ -1,4 +1,3 @@
-/* Reset va Asosiy Stillar */
 body, html {
     margin: 0;
     padding: 0;
@@ -9,7 +8,6 @@ body, html {
     -webkit-tap-highlight-color: transparent;
 }
 
-/* Scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { 
@@ -17,7 +15,6 @@ body, html {
     border-radius: 10px; 
 }
 
-/* Glassmorphism */
 .glass-panel {
     background: rgba(15, 15, 25, 0.8);
     backdrop-filter: blur(12px);
@@ -38,7 +35,6 @@ body, html {
     box-shadow: 0 0 15px rgba(217, 70, 239, 0.2);
 }
 
-/* Animatsiyalar */
 .animated-title {
     background: linear-gradient(
         to right,
