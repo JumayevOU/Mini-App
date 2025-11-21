@@ -50,14 +50,14 @@ function scrollToBottom() {
 }
 
 function formatMessage(content) {
-    // Oddiy formatlash
+    // Matnni formatlash (Markdown)
     content = content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>');
     content = content.replace(/```([\s\S]*?)```/g, '<pre class="bg-[#0a0a12] p-3 rounded-lg my-2 overflow-x-auto border border-white/10"><code class="text-sm font-mono text-[#00ffff]">$1</code></pre>');
     content = content.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-[#d946ef]">$1</code>');
     return content.replace(/\n/g, '<br>');
 }
 
-// --- MESSAGE RENDERING ---
+// --- MESSAGE CREATION ---
 function createMessageBubble(role, type = 'text') {
     const isUser = role === 'user';
     const div = document.createElement('div');
@@ -86,7 +86,7 @@ function createMessageBubble(role, type = 'text') {
     return div.querySelector('.message-content');
 }
 
-// --- ASOSIY STREAMING MANTIGI ---
+// --- REAL-TIME CHAT LOGIC ---
 async function sendMessage(text, type = 'text', file = null) {
     if (isTyping) return;
     isTyping = true;
@@ -95,13 +95,12 @@ async function sendMessage(text, type = 'text', file = null) {
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
     
-    // 1. User xabarini chiqarish
+    // 1. User xabari
     const userBubble = createMessageBubble('user', type);
     userBubble.innerHTML = type === 'text' ? formatMessage(text) : `<div class="flex items-center gap-2 text-sm italic"><i class="fa-regular fa-image"></i> Rasm yuklanmoqda...</div>`;
 
-    // 2. AI uchun bo'sh bubble yaratish
+    // 2. AI uchun bo'sh quti (Loading state)
     const aiBubble = createMessageBubble('assistant', 'text');
-    // Kursor animatsiyasi
     aiBubble.innerHTML = '<span class="inline-block w-2 h-4 bg-[#00ffff] animate-pulse"></span>';
 
     const formData = new FormData();
@@ -113,11 +112,11 @@ async function sendMessage(text, type = 'text', file = null) {
 
     try {
         const response = await fetch('/api/chat', { method: 'POST', body: formData });
-        
         const reader = response.body.getReader();
         const decoder = new TextDecoder("utf-8");
         let aiTextRaw = "";
 
+        // Streamni o'qish tsikli
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -133,14 +132,14 @@ async function sendMessage(text, type = 'text', file = null) {
                     try {
                         const data = JSON.parse(jsonStr);
                         
-                        // Token kelsa qo'shamiz
+                        // Token kelsa matnga qo'shamiz va ekranni yangilaymiz
                         if (data.token) {
                             aiTextRaw += data.token;
-                            aiBubble.innerHTML = formatMessage(aiTextRaw); 
+                            aiBubble.innerHTML = formatMessage(aiTextRaw); // Formatlash bilan yangilash
                             scrollToBottom();
                         }
                         
-                        // Tugasa
+                        // Yakuniy signal
                         if (data.done) {
                             if (currentSessionId !== data.sessionId || data.newTitle) {
                                 currentSessionId = data.sessionId;
@@ -262,6 +261,7 @@ document.getElementById('upload-btn').onclick = () => els.fileInput.click();
     loadUserProfile();
     loadSessions();
     
+    // 3D fon
     const container = document.getElementById('canvas-container');
     if (container) {
         const scene = new THREE.Scene();
@@ -287,5 +287,3 @@ document.getElementById('upload-btn').onclick = () => els.fileInput.click();
         animate();
     }
 })();
-
-
