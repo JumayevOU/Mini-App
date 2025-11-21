@@ -50,14 +50,12 @@ function scrollToBottom() {
 }
 
 function formatMessage(content) {
-    // Matnni formatlash (Markdown)
     content = content.replace(/\*\*(.*?)\*\*/g, '<strong class="text-white font-bold">$1</strong>');
     content = content.replace(/```([\s\S]*?)```/g, '<pre class="bg-[#0a0a12] p-3 rounded-lg my-2 overflow-x-auto border border-white/10"><code class="text-sm font-mono text-[#00ffff]">$1</code></pre>');
     content = content.replace(/`([^`]+)`/g, '<code class="bg-white/10 px-1.5 py-0.5 rounded text-xs font-mono text-[#d946ef]">$1</code>');
     return content.replace(/\n/g, '<br>');
 }
 
-// --- MESSAGE CREATION ---
 function createMessageBubble(role, type = 'text') {
     const isUser = role === 'user';
     const div = document.createElement('div');
@@ -86,7 +84,7 @@ function createMessageBubble(role, type = 'text') {
     return div.querySelector('.message-content');
 }
 
-// --- REAL-TIME CHAT LOGIC ---
+// --- STREAMING CHAT LOGIC ---
 async function sendMessage(text, type = 'text', file = null) {
     if (isTyping) return;
     isTyping = true;
@@ -94,12 +92,11 @@ async function sendMessage(text, type = 'text', file = null) {
     toggleWelcome(false);
     els.userInput.value = '';
     els.userInput.style.height = 'auto';
-    
-    // 1. User xabari
+    updateSubmitBtn(); // Tugmani darhol o'chirish
+
     const userBubble = createMessageBubble('user', type);
     userBubble.innerHTML = type === 'text' ? formatMessage(text) : `<div class="flex items-center gap-2 text-sm italic"><i class="fa-regular fa-image"></i> Rasm yuklanmoqda...</div>`;
 
-    // 2. AI uchun bo'sh quti (Loading state)
     const aiBubble = createMessageBubble('assistant', 'text');
     aiBubble.innerHTML = '<span class="inline-block w-2 h-4 bg-[#00ffff] animate-pulse"></span>';
 
@@ -116,7 +113,6 @@ async function sendMessage(text, type = 'text', file = null) {
         const decoder = new TextDecoder("utf-8");
         let aiTextRaw = "";
 
-        // Streamni o'qish tsikli
         while (true) {
             const { done, value } = await reader.read();
             if (done) break;
@@ -131,22 +127,17 @@ async function sendMessage(text, type = 'text', file = null) {
 
                     try {
                         const data = JSON.parse(jsonStr);
-                        
-                        // Token kelsa matnga qo'shamiz va ekranni yangilaymiz
                         if (data.token) {
                             aiTextRaw += data.token;
-                            aiBubble.innerHTML = formatMessage(aiTextRaw); // Formatlash bilan yangilash
+                            aiBubble.innerHTML = formatMessage(aiTextRaw); 
                             scrollToBottom();
                         }
-                        
-                        // Yakuniy signal
                         if (data.done) {
                             if (currentSessionId !== data.sessionId || data.newTitle) {
                                 currentSessionId = data.sessionId;
                                 loadSessions();
                             }
                         }
-                        
                         if (data.error) {
                             aiBubble.innerHTML += `<br><span class="text-red-400 text-xs">[Xatolik: ${data.error}]</span>`;
                         }
@@ -156,12 +147,14 @@ async function sendMessage(text, type = 'text', file = null) {
         }
     } catch (e) {
         aiBubble.innerHTML = `<span class="text-red-400">Tarmoq xatoligi.</span>`;
+    } finally {
+        // MUHIM: Nima bo'lsa ham tugmani qayta yoqamiz
+        isTyping = false;
+        updateSubmitBtn();
     }
-    
-    isTyping = false;
 }
 
-// --- SESSIONS & OTHER LOGIC ---
+// --- SESSIONS ---
 async function loadSessions() {
     try {
         const res = await fetch(`/api/sessions/${currentUserId}`);
@@ -243,7 +236,23 @@ document.getElementById('new-chat-btn').onclick = startNewChat;
 els.userInput.addEventListener('input', function() {
     this.style.height = 'auto';
     this.style.height = (this.scrollHeight) + 'px';
+    updateSubmitBtn();
 });
+
+// Tugmani boshqarish (Tuzatilgan)
+function updateSubmitBtn() {
+    const hasText = els.userInput.value.trim().length > 0;
+    
+    if (hasText && !isTyping) {
+        els.submitBtn.removeAttribute('disabled');
+        els.submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+        els.submitBtn.classList.add('hover:scale-105');
+    } else {
+        els.submitBtn.setAttribute('disabled', 'true');
+        els.submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+        els.submitBtn.classList.remove('hover:scale-105');
+    }
+}
 
 els.chatForm.onsubmit = (e) => {
     e.preventDefault();
@@ -261,7 +270,6 @@ document.getElementById('upload-btn').onclick = () => els.fileInput.click();
     loadUserProfile();
     loadSessions();
     
-    // 3D fon
     const container = document.getElementById('canvas-container');
     if (container) {
         const scene = new THREE.Scene();
