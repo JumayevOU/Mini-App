@@ -43,10 +43,10 @@ async function getGPTTitle(text) {
             body: JSON.stringify({
                 model: "gpt-4o-mini",
                 messages: [
-                    { role: "system", content: "Siz sarlavha generatorisiz." },
-                    { role: "user", content: `Matnga mos 2-3 so'zli nom ber. Faqat nomni yoz: "${text.substring(0, 500)}"` }
+                    { role: "system", content: "Siz sarlavha generatorisiz. Faqat sarlavhani qaytar." },
+                    { role: "user", content: `Matnga mos 2-3 so'zli qisqa nom ber: "${text.substring(0, 300)}"` }
                 ],
-                max_tokens: 20
+                max_tokens: 15
             })
         });
         const data = await response.json();
@@ -98,9 +98,9 @@ app.delete('/api/session/:sessionId', async (req, res) => {
     catch (err) { res.status(500).json({ error: "DB error" }); }
 });
 
-// --- STREAMING CHAT ENDPOINT (TUZATILGAN) ---
+// --- STREAMING CHAT ENDPOINT (REAL VAQT) ---
 app.post('/api/chat', upload.single('file'), async (req, res) => {
-    // Javobni stream (oqim) sifatida belgilaymiz
+    // 1. Javobni Stream (SSE) formatida tayyorlaymiz
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
@@ -110,14 +110,14 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         let { sessionId } = req.body;
         let isNewSession = false;
 
-        // 1. Sessiya
+        // 2. Sessiya tekshiruvi
         if (!sessionId || sessionId === 'null') {
             const newSession = await pool.query("INSERT INTO chat_sessions (user_id, title) VALUES ($1, 'Yangi suhbat') RETURNING id", [userId]);
             sessionId = newSession.rows[0].id;
             isNewSession = true;
         }
 
-        // 2. User xabari
+        // 3. User xabarini tayyorlash
         let userContent = message || "";
         if (type === 'image' && req.file) {
             const ocrText = await extractTextFromImage(req.file.buffer);
@@ -125,10 +125,10 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             else userContent = "[Rasm yuborildi, lekin matn aniqlanmadi]";
         }
 
-        // Bazaga yozish (Kutib o'tirmaymiz)
+        // 4. User xabarini bazaga saqlash (background)
         pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
 
-        // 3. Tarix
+        // 5. Tarixni olish (Context)
         const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
         
         const apiMessages = [
@@ -137,39 +137,40 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             { role: "user", content: userContent }
         ];
 
-        // 4. OpenAI Stream
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        // 6. OpenAI Stream so'rovi
+        const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
                 "Authorization": `Bearer ${OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini",
+                model: "gpt-4o-mini", // 4.1 mini deb so'ralgan model shu
                 messages: apiMessages,
-                stream: true, // MUHIM
+                stream: true, // Streamni yoqamiz
                 temperature: 0.7,
-                max_tokens: 800
+                max_tokens: 1000
             })
         });
 
-        if (!response.ok) {
+        if (!openaiResponse.ok) {
             res.write(`data: ${JSON.stringify({ error: "AI Error" })}\n\n`);
             res.end();
             return;
         }
 
-        // Streamni o'qish va Clientga uzatish (Node.js usuli)
-        // Node-fetch yoki native fetch stream qaytaradi.
-        const reader = response.body; // Node stream
+        // 7. Streamni o'qish va Clientga uzatish
+        const reader = openaiResponse.body.getReader();
         const decoder = new TextDecoder("utf-8");
         let fullAIResponse = "";
         let buffer = "";
 
-        for await (const chunk of reader) {
-            const textChunk = decoder.decode(chunk, { stream: true });
-            buffer += textChunk;
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
             
+            // Stream chunklarini yig'ish va qatorlarga bo'lish
+            buffer += decoder.decode(value, { stream: true });
             const lines = buffer.split("\n");
             buffer = lines.pop(); // Oxirgi tugallanmagan qatorni saqlab qolamiz
 
@@ -184,7 +185,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
                         const token = json.choices[0]?.delta?.content || "";
                         if (token) {
                             fullAIResponse += token;
-                            // Tokenni frontendga yuborish
+                            // Har bir token (so'z/harf) ni darhol frontendga yuboramiz
                             res.write(`data: ${JSON.stringify({ token })}\n\n`);
                         }
                     } catch (e) { }
@@ -192,7 +193,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             }
         }
 
-        // 5. Yakuniy ishlar
+        // 8. Yakuniy saqlashlar
         let newTitle = null;
         if (isNewSession) {
             newTitle = await getGPTTitle(userContent);
@@ -217,5 +218,3 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
 app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
-
-
