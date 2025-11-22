@@ -58,7 +58,7 @@ async function checkAndIncrementLimit(userId, limit = 3) {
 
 async function getGPTTitle(text) {
     try {
-        // TUZATILDI: URL toza formatda (qavslarsiz)
+        // TUZATILDI: URL oddiy string holatida
         const response = await fetch("[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)", {
             method: "POST",
             headers: {
@@ -66,7 +66,7 @@ async function getGPTTitle(text) {
                 "Authorization": `Bearer ${OPENAI_API_KEY}`
             },
             body: JSON.stringify({
-                model: "gpt-4o-mini", // Sarlavha uchun kichik model yetarli
+                model: "gpt-4o-mini",
                 messages: [
                     { role: "system", content: "Sarlavha generatorisan. Faqat 2-3 so'zli nom qaytar." },
                     { role: "user", content: `Matnga sarlavha: "${text.substring(0, 100)}"` }
@@ -88,7 +88,7 @@ async function extractTextFromImage(buffer) {
         formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
 
-        // TUZATILDI: URL toza formatda (qavslarsiz)
+        // TUZATILDI: URL oddiy string holatida
         const response = await fetch("[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)", { 
             method: "POST", body: formData, headers: formData.getHeaders()
         });
@@ -141,16 +141,12 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         }
 
         let userContent = message || "";
-        
-        // 1. MODEL TANLASH LOGIKASI
-        // Default: gpt-4o-mini (matn va OCR uchun)
-        let modelName = "gpt-4o-mini"; 
+        let modelName = "gpt-4o-mini";
 
         if (type === 'image' && req.file) {
             if (analysisType === 'vision') {
-                // Vision (Aqlli tahlil) tanlansa, kuchli model ishlatamiz
+                // Vision uchun modelni kuchaytiramiz
                 modelName = "gpt-4o";
-                
                 const canUse = await checkAndIncrementLimit(userId, 3);
                 if (!canUse) {
                     res.write(`data: ${JSON.stringify({ token: "⚠️ **Limit tugadi!**\nVision (aqlli tahlil) kuniga 3 marta. 'OCR' dan foydalaning." })}\n\n`);
@@ -164,7 +160,6 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
                     { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}` } }
                 ];
             } else {
-                // OCR tanlansa, gpt-4o-mini qoladi (chunki biz unga faqat matn beramiz)
                 const ocrText = await extractTextFromImage(req.file.buffer);
                 userContent = ocrText ? `[OCR Matn]: "${ocrText}"\n\nSavol: ${message}` : "[Matn topilmadi]";
             }
@@ -185,7 +180,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             { role: "user", content: userContent }
         ];
 
-        // TUZATILDI: URL toza formatda va MODEL dinamik (modelName)
+        // TUZATILDI: URL oddiy string holatida
         const openaiResponse = await fetch("[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)", {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
@@ -195,7 +190,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
 
         if (!openaiResponse.ok) {
             const errorText = await openaiResponse.text();
-            console.error("OpenAI Error:", errorText); // Xatoni konsolga chiqaramiz
+            console.error("OpenAI Error:", errorText);
             res.write(`data: ${JSON.stringify({ error: "AI Error: " +  openaiResponse.statusText })}\n\n`);
             res.end(); return;
         }
