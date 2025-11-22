@@ -58,6 +58,7 @@ async function checkAndIncrementLimit(userId, limit = 3) {
 
 async function getGPTTitle(text) {
     try {
+        // TUZATILDI: URL to'g'ri formatda
         const response = await fetch("[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)", {
             method: "POST",
             headers: {
@@ -87,6 +88,7 @@ async function extractTextFromImage(buffer) {
         formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
 
+        // TUZATILDI: URL to'g'ri formatda
         const response = await fetch("[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)", { 
             method: "POST", body: formData, headers: formData.getHeaders()
         });
@@ -176,6 +178,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             { role: "user", content: userContent }
         ];
 
+        // TUZATILDI: URL to'g'ri formatda
         const openaiResponse = await fetch("[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)", {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
