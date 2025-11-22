@@ -4,11 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ChatGPT AI</title>
-    <script src="https://telegram.org/js/telegram-web-app.js"></script>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="[https://telegram.org/js/telegram-web-app.js](https://telegram.org/js/telegram-web-app.js)"></script>
+    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
+    <script src="[https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js](https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js)"></script>
+    <!-- Markdown Parsing uchun -->
+    <script src="[https://cdn.jsdelivr.net/npm/marked/marked.min.js](https://cdn.jsdelivr.net/npm/marked/marked.min.js)"></script>
+    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500&display=swap)" rel="stylesheet">
+    <link rel="stylesheet" href="[https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css](https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css)">
     <link rel="stylesheet" href="css/style.css">
     <style>
         html, body { height: 100dvh; overflow: hidden; overscroll-behavior: none; }
@@ -21,9 +23,32 @@
     <div id="canvas-container" class="fixed inset-0 z-0 pointer-events-none opacity-60"></div>
     <input type="file" id="file-upload" accept="image/*" class="hidden">
 
+    <!-- MODE SELECTION MODAL (Yangi) -->
+    <div id="mode-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center hidden transition-opacity">
+        <div class="bg-[#1a1a23] border border-white/10 rounded-2xl p-6 w-[90%] max-w-sm shadow-2xl transform scale-95 transition-transform" id="modal-content">
+            <h3 class="text-xl font-orbitron text-center mb-4 text-white">Tahlil Turini Tanlang</h3>
+            <div class="space-y-3">
+                <button onclick="selectMode('vision')" class="w-full p-4 bg-gradient-to-r from-[#7c3aed] to-[#d946ef] rounded-xl flex items-center gap-3 hover:opacity-90 transition-all">
+                    <div class="w-10 h-10 bg-white/20 rounded-full flex items-center justify-center"><i class="fa-solid fa-eye text-white"></i></div>
+                    <div class="text-left">
+                        <div class="font-bold text-white">AI Vision (Aqlli)</div>
+                        <div class="text-xs text-white/80">Rasm ma'nosini tushunadi (Limit: 3/kun)</div>
+                    </div>
+                </button>
+                <button onclick="selectMode('ocr')" class="w-full p-4 bg-[#2a2a35] border border-white/5 rounded-xl flex items-center gap-3 hover:bg-[#333] transition-all">
+                    <div class="w-10 h-10 bg-[#00ffff]/10 rounded-full flex items-center justify-center"><i class="fa-solid fa-font text-[#00ffff]"></i></div>
+                    <div class="text-left">
+                        <div class="font-bold text-[#00ffff]">OCR Scanner</div>
+                        <div class="text-xs text-gray-400">Faqat matnni ko'chiradi (Cheksiz)</div>
+                    </div>
+                </button>
+            </div>
+            <button onclick="closeModal()" class="mt-4 w-full py-2 text-gray-500 hover:text-white text-sm">Bekor qilish</button>
+        </div>
+    </div>
+
     <!-- SIDEBAR -->
     <aside id="sidebar" class="fixed inset-y-0 left-0 z-40 w-[280px] bg-[#0a0a12]/95 backdrop-blur-2xl border-r border-white/10 transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out flex flex-col h-full shadow-[4px_0_24px_rgba(0,0,0,0.4)]">
-        
         <div class="p-4 h-16 shrink-0 flex items-center justify-between border-b border-white/5">
             <button id="new-chat-btn" class="flex-1 bg-gradient-to-r from-[#d946ef] to-[#8b5cf6] hover:opacity-90 active:scale-95 transition-all rounded-xl py-3 px-4 text-sm font-bold text-white shadow-lg flex items-center justify-center gap-2 border border-white/10">
                 <i class="fa-solid fa-plus"></i> <span>Yangi Chat</span>
@@ -32,15 +57,11 @@
                 <i class="fa-solid fa-xmark text-xl"></i>
             </button>
         </div>
-
-        <!-- Chat History -->
         <div id="chat-history-list" class="flex-1 overflow-y-auto p-3 space-y-1 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent"></div>
-
-        <!-- User Profile -->
         <div class="p-4 border-t border-white/5 bg-black/20 shrink-0 pb-safe">
             <div class="flex items-center gap-3 px-2 pt-2">
                 <div class="w-10 h-10 rounded-full p-[1px] bg-gradient-to-tr from-[#d946ef] to-[#00ffff]">
-                    <img id="user-avatar" src="" class="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#0a0a12]" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=guest'">
+                    <img id="user-avatar" src="" class="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#0a0a12]" onerror="this.src='[https://api.dicebear.com/7.x/avataaars/svg?seed=guest](https://api.dicebear.com/7.x/avataaars/svg?seed=guest)'">
                 </div>
                 <div class="overflow-hidden">
                     <div id="user-name" class="text-sm font-semibold truncate text-gray-100">User</div>
@@ -61,11 +82,7 @@
                 <button id="toggle-sidebar" class="md:hidden p-2 -ml-2 text-gray-300 hover:text-white active:scale-90 transition-transform">
                     <i class="fa-solid fa-bars text-xl"></i>
                 </button>
-                
-                <!-- BU YERDA O'ZGARISH: Title doimiy va animatsiyali -->
-                <h1 id="chat-title" class="font-orbitron text-xl md:text-2xl tracking-wide truncate max-w-[200px] sm:max-w-md animate-text-shimmer">
-                    ChatGPT AI
-                </h1>
+                <h1 id="chat-title" class="font-orbitron text-xl md:text-2xl tracking-wide truncate max-w-[200px] sm:max-w-md animate-text-shimmer">ChatGPT AI</h1>
             </div>
             <div class="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center border border-white/5">
                 <i class="fa-solid fa-robot text-[#00ffff] text-sm animate-pulse"></i>
@@ -76,7 +93,7 @@
         <main id="chat-container" class="flex-1 overflow-y-auto overflow-x-hidden p-4 space-y-5 scroll-smooth w-full max-w-4xl mx-auto">
             <div id="welcome-screen" class="h-full flex flex-col items-center justify-center transition-all duration-500 min-h-[300px]">
                 <div class="w-28 h-28 md:w-36 md:h-36 mb-6 relative animate-pulse-slow">
-                     <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-[0_0_25px_rgba(217,70,239,0.3)]">
+                    <svg viewBox="0 0 100 100" class="w-full h-full drop-shadow-[0_0_25px_rgba(217,70,239,0.3)]">
                         <defs>
                             <linearGradient id="logoGradientMain" x1="0%" y1="0%" x2="100%" y2="100%">
                                 <stop offset="0%" style="stop-color:#ff00ff;stop-opacity:1" />
@@ -85,29 +102,41 @@
                             </linearGradient>
                         </defs>
                         <path d="M50 20 L75 35 L75 65 L50 80 L25 65 L25 35 Z" fill="none" stroke="url(#logoGradientMain)" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" />
-                        <path d="M50 38 L62 45 L62 58 L50 65 L38 58 L38 45 Z" fill="url(#logoGradientMain)" opacity="0.2" />
                         <circle cx="50" cy="50" r="42" stroke="url(#logoGradientMain)" stroke-width="1" stroke-dasharray="10 10" opacity="0.3" class="animate-spin-slow origin-center"/>
                     </svg>
                 </div>
                 <h2 class="text-2xl md:text-3xl font-bold text-center text-white mb-2 font-orbitron">Qanday yordam bera olaman?</h2>
-                <p class="text-gray-400 text-sm mb-8 text-center max-w-xs">Men sizning shaxsiy AI yordamchingizman.</p>
             </div>
             <div id="messages-list" class="pb-4 space-y-5 min-h-0"></div>
         </main>
 
+        <!-- IMAGE PREVIEW (Yangi) -->
+        <div id="image-preview-area" class="hidden px-4 pb-2 w-full max-w-4xl mx-auto z-20">
+            <div class="relative inline-block group">
+                <img id="preview-img" src="" class="h-16 w-16 rounded-xl border border-[#00ffff] object-cover shadow-lg">
+                <button onclick="clearImage()" class="absolute -top-2 -right-2 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow-md hover:scale-110 transition-transform">✕</button>
+                <span id="mode-badge" class="absolute -bottom-1 -right-1 text-[9px] font-bold px-1.5 py-0.5 rounded bg-black text-white border border-white/20">OCR</span>
+            </div>
+        </div>
+
         <!-- INPUT AREA -->
         <footer class="p-3 md:p-5 bg-[#050509] border-t border-white/5 shrink-0 pb-safe z-20">
             <div class="max-w-4xl mx-auto relative">
-                <form id="chat-form" class="bg-[#15151c] border border-white/10 rounded-2xl p-1.5 flex items-end shadow-2xl transition-all focus-within:border-[#d946ef]/50 focus-within:bg-[#1a1a23] ring-0 focus-within:ring-1 focus-within:ring-[#d946ef]/20">
+                <form id="chat-form" class="bg-[#15151c] border border-white/10 rounded-2xl p-1.5 flex items-end shadow-2xl transition-all focus-within:border-[#d946ef]/50">
                     <button type="button" id="upload-btn" class="p-3 text-gray-400 hover:text-[#00ffff] transition-colors rounded-xl hover:bg-white/5 active:scale-95 h-[48px] w-[48px] flex items-center justify-center">
                         <i class="fa-solid fa-paperclip text-lg"></i>
                     </button>
+                    
                     <textarea id="user-input" rows="1" 
                         class="flex-1 bg-transparent text-white text-base p-3 max-h-32 resize-none focus:outline-none placeholder-gray-500 min-h-[48px] flex items-center leading-6"
                         placeholder="Xabar yozing..."></textarea>
+                    
+                    <!-- Ovozli yozish (o'zgartirilmagan, lekin joyi turibdi) -->
                     <button type="button" id="mic-btn" class="p-3 text-gray-400 hover:text-[#d946ef] transition-colors rounded-xl hover:bg-white/5 active:scale-95 h-[48px] w-[48px] flex items-center justify-center">
                         <i class="fa-solid fa-microphone text-lg"></i>
                     </button>
+
+                    <!-- SEND / STOP TUGMASI (O'zgaruvchan) -->
                     <button type="submit" id="submit-btn" class="ml-1 p-3 bg-white/5 text-gray-600 rounded-xl cursor-not-allowed transition-all h-[48px] w-[48px] flex items-center justify-center disabled:opacity-50" disabled>
                         <i class="fa-solid fa-arrow-up text-lg font-bold"></i>
                     </button>
