@@ -4,7 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const FormData = require('form-data');
 const { Pool } = require('pg');
-const fetch = require('node-fetch'); // Node v18+ da shart emas
+// "node-fetch" shart emas, chunki Node v22 da native fetch bor
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -194,7 +194,8 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         let fullAIResponse = "";
         // Node stream o'qish
         for await (const chunk of openaiResponse.body) {
-            const lines = chunk.toString().split("\n");
+            // Native fetch Uint8Array qaytaradi, shuning uchun Buffer.from ishlatamiz
+            const lines = Buffer.from(chunk).toString('utf-8').split("\n");
             for (const line of lines) {
                 const trimmed = line.trim();
                 if (trimmed.startsWith("data: ")) {
