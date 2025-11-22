@@ -4,6 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const FormData = require('form-data');
 const { Pool } = require('pg');
+// Node v22 da native fetch bor, node-fetch shart emas
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -35,6 +36,8 @@ const SYSTEM_INSTRUCTION =
     "4. Kod ichida qisqa izohlar bo'lsin.";
 
 // --- HELPERS ---
+
+// 1. Limit tekshirish (Vision uchun)
 async function checkAndIncrementLimit(userId, limit = 3) {
     const today = new Date().toISOString().split('T')[0];
     try {
@@ -56,9 +59,9 @@ async function checkAndIncrementLimit(userId, limit = 3) {
     } catch (e) { return true; }
 }
 
+// 2. Sarlavha olish
 async function getGPTTitle(text) {
     try {
-        // TUZATILDI: URL oddiy string holatida
         const response = await fetch("[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)", {
             method: "POST",
             headers: {
@@ -79,6 +82,7 @@ async function getGPTTitle(text) {
     } catch (e) { return "Suhbat"; }
 }
 
+// 3. OCR (Matn ko'chirish)
 async function extractTextFromImage(buffer) {
     if (!OCR_API_KEY) return null;
     try {
@@ -88,7 +92,6 @@ async function extractTextFromImage(buffer) {
         formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
 
-        // TUZATILDI: URL oddiy string holatida
         const response = await fetch("[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)", { 
             method: "POST", body: formData, headers: formData.getHeaders()
         });
@@ -118,6 +121,7 @@ app.delete('/api/session/:sessionId', async (req, res) => {
     catch (err) { res.status(500).json({ error: "DB error" }); }
 });
 
+// --- CHAT ENDPOINT ---
 app.post('/api/chat', upload.single('file'), async (req, res) => {
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
@@ -141,12 +145,14 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         }
 
         let userContent = message || "";
-        let modelName = "gpt-4o-mini";
+        let modelName = "gpt-4o-mini"; // Default model
 
+        // RASM BILAN ISHLASH
         if (type === 'image' && req.file) {
             if (analysisType === 'vision') {
-                // Vision uchun modelni kuchaytiramiz
+                // Vision uchun kuchli model
                 modelName = "gpt-4o";
+                
                 const canUse = await checkAndIncrementLimit(userId, 3);
                 if (!canUse) {
                     res.write(`data: ${JSON.stringify({ token: "⚠️ **Limit tugadi!**\nVision (aqlli tahlil) kuniga 3 marta. 'OCR' dan foydalaning." })}\n\n`);
@@ -160,6 +166,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
                     { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}` } }
                 ];
             } else {
+                // OCR uchun (gpt-4o-mini matnni tushuntirib beradi)
                 const ocrText = await extractTextFromImage(req.file.buffer);
                 userContent = ocrText ? `[OCR Matn]: "${ocrText}"\n\nSavol: ${message}` : "[Matn topilmadi]";
             }
@@ -180,7 +187,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             { role: "user", content: userContent }
         ];
 
-        // TUZATILDI: URL oddiy string holatida
+        // --- OPENAI FETCH (TUZATILGAN URL) ---
         const openaiResponse = await fetch("[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)", {
             method: "POST",
             headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
@@ -189,13 +196,14 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         });
 
         if (!openaiResponse.ok) {
-            const errorText = await openaiResponse.text();
-            console.error("OpenAI Error:", errorText);
-            res.write(`data: ${JSON.stringify({ error: "AI Error: " +  openaiResponse.statusText })}\n\n`);
+            const err = await openaiResponse.text();
+            console.error("OpenAI Error:", err);
+            res.write(`data: ${JSON.stringify({ error: "AI Error" })}\n\n`);
             res.end(); return;
         }
 
         let fullAIResponse = "";
+        // Streamni o'qish (Node v22 uchun moslashtirilgan)
         for await (const chunk of openaiResponse.body) {
             const lines = Buffer.from(chunk).toString('utf-8').split("\n");
             for (const line of lines) {
