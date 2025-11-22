@@ -1,4 +1,4 @@
-// server.js (Optimallashtirilgan va tuzatilgan)
+// server.legacy.fixed.js  (eski kod, optimallashtirilgan — VISION YO'Q)
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -9,7 +9,7 @@ const { Pool } = require('pg');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// --- ENV ---
+// --- ENV VARS ---
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL;
@@ -22,123 +22,42 @@ const pool = new Pool({
   ssl: DATABASE_URL && DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
 });
 
-// Multer - file in memory (we will convert to base64)
 const upload = multer({ storage: multer.memoryStorage() });
 
-// Middlewares
 app.use(cors());
-app.use(express.json({ limit: '12mb' }));
-app.use(express.urlencoded({ extended: true, limit: '12mb' })); // helps if any non-file form fields are sent
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-// System instruction
-const SYSTEM_INSTRUCTION =
-  "Siz foydali va aqlli AI yordamchisiz.\n" +
-  "1. Javoblaringiz lo'nda va aniq bo'lsin.\n" +
-  "2. Mavzuga mos EMOJILAR ishlating. 🎨✨\n" +
-  "3. KOD yozsangiz, albatta Markdown (```language) formatida yozing.\n" +
-  "4. Kod ichida qisqa izohlar bo'lsin.";
+const CONCISE_INSTRUCTION =
+  "Siz foydali AI yordamchisiz. Javoblaringiz juda QISQA, LO'NDA va ANIQ bo'lsin. Eng muhimi: Javobingizni har doim mavzuga mos EMOJILAR bilan bezang. 🎨✨";
 
 // --- HELPERS ---
-
-// Limit tekshirish (vision)
-async function checkAndIncrementLimit(userId, limit = 3) {
-  const today = new Date().toISOString().split('T')[0];
-  try {
-    const res = await pool.query(
-      "SELECT vision_count FROM daily_limits WHERE user_id = $1 AND usage_date = $2",
-      [userId, today]
-    );
-    const currentCount = res.rows[0]?.vision_count || 0;
-    if (currentCount >= limit) return false;
-
-    await pool.query(`
-      INSERT INTO daily_limits (user_id, usage_date, vision_count)
-      VALUES ($1, $2, 1)
-      ON CONFLICT (user_id, usage_date)
-      DO UPDATE SET vision_count = daily_limits.vision_count + 1
-    `, [userId, today]);
-
-    return true;
-  } catch (e) {
-    console.error("checkAndIncrementLimit error:", e);
-    // Fail-open: agar DB muammosi bo'lsa, ruxsat berish (yoki siz xohlasangiz false qaytarish mumkin)
-    return true;
-  }
-}
-
-// Flatten DB content (har doim string yoki structured array qaytaradi kerakli joylarga)
-function flattenContentToString(content) {
-  if (typeof content === 'string') {
-    const trimmed = content.trim();
-    // If stored as JSON array/object string
-    if ((trimmed.startsWith('[') || trimmed.startsWith('{'))) {
-      try {
-        const parsed = JSON.parse(trimmed);
-        if (Array.isArray(parsed)) {
-          return parsed.map(item => {
-            if (typeof item === 'string') return item;
-            if (item?.type === 'text') return item.text || '';
-            if (item?.type === 'input_image') return `[IMAGE] (image omitted in history)`;
-            if (item?.type === 'image_url') return `[IMAGE_URL] ${item.image_url?.url || ''}`;
-            return JSON.stringify(item);
-          }).join('\n\n');
-        } else if (typeof parsed === 'object') {
-          return JSON.stringify(parsed);
-        }
-      } catch (e) {
-        // ignore parse error
-      }
-    }
-    return content;
-  } else if (Array.isArray(content)) {
-    return content.map(item => {
-      if (typeof item === 'string') return item;
-      if (item?.type === 'text') return item.text || '';
-      if (item?.type === 'input_image') return `[IMAGE] (image omitted in history)`;
-      return JSON.stringify(item);
-    }).join('\n\n');
-  } else if (typeof content === 'object' && content !== null) {
-    return JSON.stringify(content);
-  }
-  return String(content);
-}
-
-// Get title via OpenAI (simple)
 async function getGPTTitle(text) {
   try {
-    const promptText = (typeof text === 'string' ? text : flattenContentToString(text)).substring(0, 200);
-    const resp = await fetch("https://api.openai.com/v1/chat/completions", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
         messages: [
-          { role: "system", content: "Sarlavha generatorisan. Faqat 2-3 so'zli nom qaytar." },
-          { role: "user", content: `Matnga sarlavha: "${promptText}"` }
+          { role: "system", content: "Siz sarlavha generatorisiz. Faqat sarlavhani qaytar." },
+          { role: "user", content: `Matnga mos 2-3 so'zli qisqa nom ber: "${(text||'').substring(0, 300)}"` }
         ],
-        max_tokens: 16
+        max_tokens: 15
       })
     });
-
-    if (!resp.ok) {
-      const err = await resp.text();
-      console.error("getGPTTitle OpenAI error:", resp.status, err);
-      return "Yangi suhbat";
-    }
-
-    const data = await resp.json();
-    return data.choices?.[0]?.message?.content?.replace(/['"_`*#]/g, '').trim() || "Yangi suhbat";
+    const data = await response.json();
+    let title = data.choices?.[0]?.message?.content || "Yangi suhbat";
+    return title.replace(/['"_`*#]/g, '').trim();
   } catch (e) {
-    console.error("getGPTTitle exception:", e);
+    console.error("getGPTTitle error:", e);
     return "Suhbat";
   }
 }
 
-// OCR using ocr.space (if configured)
 async function extractTextFromImage(buffer) {
   if (!OCR_API_KEY) return null;
   try {
@@ -148,20 +67,14 @@ async function extractTextFromImage(buffer) {
     formData.append('language', 'eng');
     formData.append('isOverlayRequired', 'false');
 
-    const headers = formData.getHeaders ? formData.getHeaders() : {};
-    const resp = await fetch("https://api.ocr.space/parse/image", {
+    // duplex removed - keep simple
+    const response = await fetch("https://api.ocr.space/parse/image", {
       method: "POST",
-      headers,
-      body: formData
+      body: formData,
+      headers: formData.getHeaders ? formData.getHeaders() : {}
     });
 
-    if (!resp.ok) {
-      const txt = await resp.text();
-      console.error("OCR API error:", resp.status, txt);
-      return null;
-    }
-
-    const data = await resp.json();
+    const data = await response.json();
     if (data.IsErroredOnProcessing) return null;
     return data.ParsedResults?.[0]?.ParsedText?.trim() || null;
   } catch (e) {
@@ -170,8 +83,7 @@ async function extractTextFromImage(buffer) {
   }
 }
 
-// --- ROUTES ---
-
+// --- API ROUTES ---
 app.get('/api/sessions/:userId', async (req, res) => {
   try {
     const result = await pool.query("SELECT * FROM chat_sessions WHERE user_id = $1 ORDER BY updated_at DESC", [req.params.userId]);
@@ -202,7 +114,7 @@ app.delete('/api/session/:sessionId', async (req, res) => {
   }
 });
 
-// --- CHAT (multer for file) ---
+// --- STREAMING CHAT ENDPOINT (REAL VAQT) ---
 app.post('/api/chat', upload.single('file'), async (req, res) => {
   // SSE headers
   res.setHeader('Content-Type', 'text/event-stream');
@@ -210,106 +122,87 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
   res.setHeader('Connection', 'keep-alive');
   res.flushHeaders && res.flushHeaders();
 
-  const controller = new AbortController();
-  req.on('close', () => {
-    controller.abort();
-  });
-
   try {
-    // Note: multer populates req.body and req.file
-    const userId = req.body.userId || req.body.user_id || 'guest';
-    const type = req.body.type || 'text'; // 'text' or 'image'
-    const message = req.body.message || '';
-    const analysisType = req.body.analysisType || req.body.analysis_type || 'ocr'; // 'vision' or 'ocr'
-    let sessionId = req.body.sessionId || req.body.session_id || null;
+    // DIAGNOSTIC LOG (foydali)
+    console.log("=== /api/chat called ===", {
+      headersContentType: req.headers['content-type'],
+      bodyKeys: Object.keys(req.body || {}),
+      hasFile: !!req.file,
+      OPENAI_KEY: !!OPENAI_API_KEY
+    });
+
+    if (!OPENAI_API_KEY) {
+      res.write(`data: ${JSON.stringify({ error: "Server misconfiguration: missing OPENAI_API_KEY" })}\n\n`);
+      return res.end();
+    }
+
+    const { userId, type, message } = req.body;
+    let { sessionId } = req.body;
     let isNewSession = false;
 
-    // create session if missing
-    if (!sessionId || sessionId === 'null' || sessionId === 'undefined') {
+    if (!sessionId || sessionId === 'null') {
       const newSession = await pool.query("INSERT INTO chat_sessions (user_id, title) VALUES ($1, 'Yangi suhbat') RETURNING id", [userId]);
       sessionId = newSession.rows[0].id;
       isNewSession = true;
     }
 
-    // Prepare userContent for OpenAI messages
-    let modelName = "gpt-4o-mini";
+    // Prepare user content
     let userContent = message || "";
-
-    // If image is present
     if (type === 'image' && req.file) {
-      const base64 = req.file.buffer.toString('base64');
-
-      if (analysisType === 'vision') {
-        modelName = "gpt-4o"; // stronger model for vision
-        // check limit
-        const canUse = await checkAndIncrementLimit(userId, 3);
-        if (!canUse) {
-          res.write(`data: ${JSON.stringify({ token: "⚠️ Kunlik vision limiti tugadi (3 marta)." })}\n\n`);
-          res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
-          return res.end();
-        }
-        // IMPORTANT: Build structured content array with 'text' and 'input_image'
-        userContent = [
-          { type: "text", text: message || "Rasmni tahlil qil." },
-          { type: "input_image", image: base64 } // image as base64 (no data: prefix)
-        ];
-      } else {
-        // OCR flow
-        const ocrText = await extractTextFromImage(req.file.buffer);
-        userContent = ocrText ? `[OCR Matn]: "${ocrText}"\n\nSavol: ${message || ''}` : "[OCR matn topilmadi]";
-      }
+      const ocrText = await extractTextFromImage(req.file.buffer);
+      if (ocrText) userContent = `[Rasm]: ${ocrText}\n\n(Rasm mazmuni bo'yicha javob bering)`;
+      else userContent = "[Rasm yuborildi, lekin matn aniqlanmadi]";
     }
 
-    // Save user message to DB (store as string or JSON string)
-    const dbContent = Array.isArray(userContent) ? JSON.stringify(userContent) : userContent;
-    await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, dbContent, type]);
+    // Save user message to DB (await so that errors are visible)
+    try {
+      await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
+    } catch (dbErr) {
+      console.error("DB insert user message error:", dbErr);
+    }
 
-    // Load last messages for context (flattened to strings where needed)
-    const historyRes = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 20", [sessionId]);
+    // Get history
+    const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
+
     const apiMessages = [
-      { role: "system", content: SYSTEM_INSTRUCTION },
-      ...historyRes.rows.map(m => ({ role: m.role, content: flattenContentToString(m.content) })),
-      // For the user message we send structured content if it's an array (vision), otherwise a string
-      (Array.isArray(userContent))
-        ? { role: "user", content: userContent } // structured content (text + input_image)
-        : { role: "user", content: String(userContent) }
+      { role: "system", content: CONCISE_INSTRUCTION },
+      ...history.rows.map(m => ({ role: m.role, content: m.content })),
+      { role: "user", content: userContent }
     ];
 
-    // Call OpenAI Chat Completions (stream)
-    const openaiResp = await fetch("https://api.openai.com/v1/chat/completions", {
+    // Call OpenAI (stream)
+    const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
-        "Authorization": `Bearer ${OPENAI_API_KEY}`,
-        "Content-Type": "application/json"
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${OPENAI_API_KEY}`
       },
       body: JSON.stringify({
-        model: modelName,
+        model: "gpt-4o-mini",
         messages: apiMessages,
         stream: true,
-        max_tokens: 1500
-      }),
-      signal: controller.signal
+        temperature: 0.7,
+        max_tokens: 1000
+      })
     });
 
-    if (!openaiResp.ok) {
-      const errText = await openaiResp.text();
-      console.error("OpenAI Error:", openaiResp.status, errText);
-      res.write(`data: ${JSON.stringify({ error: "AI Error", detail: errText })}\n\n`);
+    if (!openaiResponse.ok) {
+      const errBody = await openaiResponse.text();
+      console.error("OpenAI Error:", openaiResponse.status, errBody);
+      res.write(`data: ${JSON.stringify({ error: "AI Error", detail: errBody })}\n\n`);
       return res.end();
     }
 
-    // Stream parsing compatible with getReader() or Node streams
-    let fullAI = "";
+    // Read stream robustly: support getReader() or Node async iterable
+    let fullAIResponse = "";
     let buffer = "";
 
-    async function handleChunkText(text) {
-      buffer += text;
-      const parts = buffer.split(/\r?\n/);
-      buffer = parts.pop(); // keep incomplete chunk
-
-      for (const line of parts) {
+    async function handleChunkText(chunkText) {
+      buffer += chunkText;
+      const lines = buffer.split(/\r?\n/);
+      buffer = lines.pop();
+      for (const line of lines) {
         const trimmed = line.trim();
-        if (!trimmed) continue;
         if (!trimmed.startsWith("data:")) continue;
         const dataStr = trimmed.replace(/^data:\s*/, "");
         if (dataStr === "[DONE]") continue;
@@ -317,62 +210,60 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
           const json = JSON.parse(dataStr);
           const token = json.choices?.[0]?.delta?.content || "";
           if (token) {
-            fullAI += token;
+            fullAIResponse += token;
             res.write(`data: ${JSON.stringify({ token })}\n\n`);
           }
         } catch (e) {
-          // ignore partial/parse errors
+          // ignore partial json parse
         }
       }
     }
 
-    if (openaiResp.body?.getReader) {
-      const reader = openaiResp.body.getReader();
+    if (openaiResponse.body?.getReader) {
+      const reader = openaiResponse.body.getReader();
       const decoder = new TextDecoder();
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         await handleChunkText(decoder.decode(value, { stream: true }));
       }
-      await handleChunkText(""); // flush
+      await handleChunkText("");
     } else {
-      for await (const chunk of openaiResp.body) {
+      for await (const chunk of openaiResponse.body) {
         await handleChunkText(chunk.toString('utf8'));
       }
     }
 
-    // Save assistant response to DB
-    if (fullAI && fullAI.trim().length > 0) {
-      await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, fullAI]);
-      await pool.query("UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1", [sessionId]);
+    // Save assistant response
+    if (fullAIResponse && fullAIResponse.trim().length > 0) {
+      try {
+        await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'assistant', $2, 'text')", [sessionId, fullAIResponse]);
+        await pool.query("UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1", [sessionId]);
+      } catch (dbErr) {
+        console.error("DB insert assistant message error:", dbErr);
+      }
     }
 
-    // If new session, generate title
+    // New title
+    let newTitle = null;
     if (isNewSession) {
-      const titleText = flattenContentToString(userContent).slice(0, 200);
-      const newTitle = await getGPTTitle(titleText);
-      await pool.query("UPDATE chat_sessions SET title = $1 WHERE id = $2", [newTitle, sessionId]);
-      res.write(`data: ${JSON.stringify({ newTitle })}\n\n`);
+      try {
+        newTitle = await getGPTTitle(userContent);
+        await pool.query("UPDATE chat_sessions SET title = $1 WHERE id = $2", [newTitle, sessionId]);
+      } catch (e) {
+        console.error("set title error:", e);
+      }
     }
 
-    // Finish
-    res.write(`data: ${JSON.stringify({ done: true, sessionId })}\n\n`);
+    res.write(`data: ${JSON.stringify({ done: true, sessionId, newTitle })}\n\n`);
     return res.end();
 
-  } catch (err) {
-    if (err?.name === 'AbortError') {
-      console.log("Request aborted by client.");
-    } else {
-      console.error("Server Error (/api/chat):", err);
-      try { res.write(`data: ${JSON.stringify({ error: "Server Xatosi" })}\n\n`); } catch (e) {}
-    }
-    try { res.write(`data: ${JSON.stringify({ done: true })}\n\n`); } catch (e) {}
+  } catch (error) {
+    console.error("Stream Error:", error);
+    try { res.write(`data: ${JSON.stringify({ error: "Server Error" })}\n\n`); } catch(e) {}
     return res.end();
   }
 });
 
-// Fallback to SPA
-app.get('*', (req, res) => res.sendFile(path.join(__dirname, 'public', 'index.html')));
-
-// Start server
+app.get('*', (req, res) => { res.sendFile(path.join(__dirname, 'public', 'index.html')); });
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
