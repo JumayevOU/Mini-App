@@ -4,14 +4,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>ChatGPT AI</title>
-    <script src="[https://telegram.org/js/telegram-web-app.js](https://telegram.org/js/telegram-web-app.js)"></script>
-    <script src="[https://cdn.tailwindcss.com](https://cdn.tailwindcss.com)"></script>
-    <script src="[https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js](https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js)"></script>
-    <!-- Markdown Parsing uchun -->
-    <script src="[https://cdn.jsdelivr.net/npm/marked/marked.min.js](https://cdn.jsdelivr.net/npm/marked/marked.min.js)"></script>
-    <link href="[https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500&display=swap](https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500&display=swap)" rel="stylesheet">
-    <link rel="stylesheet" href="[https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css](https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css)">
+    
+    <!-- TO'G'RILANGAN HAVOLALAR -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Orbitron:wght@500;700;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <link rel="stylesheet" href="css/style.css">
+    
     <style>
         html, body { height: 100dvh; overflow: hidden; overscroll-behavior: none; }
         .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
@@ -21,9 +24,11 @@
 
     <!-- 3D Background -->
     <div id="canvas-container" class="fixed inset-0 z-0 pointer-events-none opacity-60"></div>
+    
+    <!-- Yashirin file input -->
     <input type="file" id="file-upload" accept="image/*" class="hidden">
 
-    <!-- MODE SELECTION MODAL (Yangi) -->
+    <!-- MODE SELECTION MODAL -->
     <div id="mode-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center hidden transition-opacity">
         <div class="bg-[#1a1a23] border border-white/10 rounded-2xl p-6 w-[90%] max-w-sm shadow-2xl transform scale-95 transition-transform" id="modal-content">
             <h3 class="text-xl font-orbitron text-center mb-4 text-white">Tahlil Turini Tanlang</h3>
@@ -61,7 +66,7 @@
         <div class="p-4 border-t border-white/5 bg-black/20 shrink-0 pb-safe">
             <div class="flex items-center gap-3 px-2 pt-2">
                 <div class="w-10 h-10 rounded-full p-[1px] bg-gradient-to-tr from-[#d946ef] to-[#00ffff]">
-                    <img id="user-avatar" src="" class="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#0a0a12]" onerror="this.src='[https://api.dicebear.com/7.x/avataaars/svg?seed=guest](https://api.dicebear.com/7.x/avataaars/svg?seed=guest)'">
+                    <img id="user-avatar" src="" class="w-full h-full rounded-full bg-gray-800 object-cover border-2 border-[#0a0a12]" onerror="this.src='https://api.dicebear.com/7.x/avataaars/svg?seed=guest'">
                 </div>
                 <div class="overflow-hidden">
                     <div id="user-name" class="text-sm font-semibold truncate text-gray-100">User</div>
@@ -110,7 +115,7 @@
             <div id="messages-list" class="pb-4 space-y-5 min-h-0"></div>
         </main>
 
-        <!-- IMAGE PREVIEW (Yangi) -->
+        <!-- IMAGE PREVIEW AREA -->
         <div id="image-preview-area" class="hidden px-4 pb-2 w-full max-w-4xl mx-auto z-20">
             <div class="relative inline-block group">
                 <img id="preview-img" src="" class="h-16 w-16 rounded-xl border border-[#00ffff] object-cover shadow-lg">
@@ -131,12 +136,10 @@
                         class="flex-1 bg-transparent text-white text-base p-3 max-h-32 resize-none focus:outline-none placeholder-gray-500 min-h-[48px] flex items-center leading-6"
                         placeholder="Xabar yozing..."></textarea>
                     
-                    <!-- Ovozli yozish (o'zgartirilmagan, lekin joyi turibdi) -->
                     <button type="button" id="mic-btn" class="p-3 text-gray-400 hover:text-[#d946ef] transition-colors rounded-xl hover:bg-white/5 active:scale-95 h-[48px] w-[48px] flex items-center justify-center">
                         <i class="fa-solid fa-microphone text-lg"></i>
                     </button>
 
-                    <!-- SEND / STOP TUGMASI (O'zgaruvchan) -->
                     <button type="submit" id="submit-btn" class="ml-1 p-3 bg-white/5 text-gray-600 rounded-xl cursor-not-allowed transition-all h-[48px] w-[48px] flex items-center justify-center disabled:opacity-50" disabled>
                         <i class="fa-solid fa-arrow-up text-lg font-bold"></i>
                     </button>
