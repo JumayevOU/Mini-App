@@ -1,4 +1,4 @@
-/* --- NEON THEME VARIABLES (Restored) --- */
+/* --- NEON THEME VARIABLES --- */
 :root {
     --bg-main: #050509;
     --bg-panel: #0a0a12;
@@ -7,7 +7,7 @@
     --accent-cyan: #00ffff;
 }
 
-* { box-sizing: border_box; -webkit-tap-highlight-color: transparent; }
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
 
 body {
     background-color: var(--bg-main);
@@ -23,10 +23,7 @@ body {
 }
 
 /* --- ANIMATIONS --- */
-@keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
-}
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
 .animate-spin-slow { animation: spin 10s linear infinite; }
 
 @keyframes pulseGlow {
@@ -41,41 +38,46 @@ body {
 }
 .animate-slide-in { animation: slideIn 0.3s ease-out forwards; }
 
-/* --- NEW: TEXT SHIMMER ANIMATION --- */
+/* --- TEXT SHIMMER --- */
 @keyframes textShine {
     0% { background-position: 0% 50%; }
     50% { background-position: 100% 50%; }
     100% { background-position: 0% 50%; }
 }
-
 .animate-text-shimmer {
-    background: linear-gradient(
-        to right,
-        #d946ef 20%,
-        #00ffff 40%,
-        #ffffff 60%,
-        #d946ef 80%
-    );
+    background: linear-gradient(to right, #d946ef 20%, #00ffff 40%, #ffffff 60%, #d946ef 80%);
     background-size: 200% auto;
     color: #fff;
     background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     animation: textShine 3s linear infinite;
-    font-weight: 800; /* Extra Bold */
-    letter-spacing: 0.05em;
+    font-weight: 800;
     filter: drop-shadow(0 0 10px rgba(217, 70, 239, 0.4));
 }
 
 /* --- SAFARI FIXES --- */
 .pb-safe { padding-bottom: env(safe-area-inset-bottom, 20px); }
 
-/* --- CODE BLOCKS --- */
-pre {
-    background: #1e1e24 !important;
-    padding: 10px;
-    border-radius: 8px;
-    overflow-x: auto;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+/* --- MARKDOWN STYLES --- */
+.message-content p { margin-bottom: 0.5em; }
+.message-content ul { list-style-type: disc; padding-left: 1.2em; margin-bottom: 0.5em; }
+.message-content ol { list-style-type: decimal; padding-left: 1.2em; margin-bottom: 0.5em; }
+.message-content strong { color: #00ffff; font-weight: 700; }
+.message-content em { color: #d946ef; font-style: italic; }
+
+/* Kod bloklari uchun style (Marked.js orqali yaratilgan) */
+.message-content pre {
+    margin: 0; /* Wrapper hal qiladi */
 }
-code { font-family: 'JetBrains Mono', monospace; font-size: 0.9em; }
+.message-content code {
+    font-family: 'JetBrains Mono', monospace;
+}
+/* Inline code */
+.message-content :not(pre) > code {
+    background: rgba(255,255,255,0.1);
+    padding: 2px 5px;
+    border-radius: 4px;
+    color: #d946ef;
+    font-size: 0.9em;
+}
