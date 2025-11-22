@@ -4,7 +4,6 @@ const path = require('path');
 const multer = require('multer');
 const FormData = require('form-data');
 const { Pool } = require('pg');
-// "node-fetch" shart emas, chunki Node v22 da native fetch bor
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -122,7 +121,6 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
-    // Stop tugmasi uchun Controller
     const controller = new AbortController();
     req.on('close', () => {
         controller.abort();
@@ -172,7 +170,6 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             { role: "system", content: SYSTEM_INSTRUCTION },
             ...history.rows.map(m => {
                 try {
-                    // Agar content JSON bo'lsa (vision history), uni parse qilamiz, yo'qsa string
                     return { role: m.role, content: m.content.startsWith('[') ? JSON.parse(m.content) : m.content };
                 } catch { return { role: m.role, content: m.content }; }
             }),
@@ -192,9 +189,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
         }
 
         let fullAIResponse = "";
-        // Node stream o'qish
         for await (const chunk of openaiResponse.body) {
-            // Native fetch Uint8Array qaytaradi, shuning uchun Buffer.from ishlatamiz
             const lines = Buffer.from(chunk).toString('utf-8').split("\n");
             for (const line of lines) {
                 const trimmed = line.trim();
@@ -217,7 +212,7 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             const titleText = typeof userContent === 'string' ? userContent : (message || "Rasm tahlili");
             const newTitle = await getGPTTitle(titleText);
             await pool.query("UPDATE chat_sessions SET title = $1 WHERE id = $2", [newTitle, sessionId]);
-            res.write(`data: ${JSON.stringify({ newTitle })}\n\n`); // Title frontendga
+            res.write(`data: ${JSON.stringify({ newTitle })}\n\n`);
         }
 
         if (fullAIResponse) {
