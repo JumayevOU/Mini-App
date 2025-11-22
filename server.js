@@ -4,6 +4,7 @@ const path = require('path');
 const multer = require('multer');
 const FormData = require('form-data');
 const { Pool } = require('pg');
+const fetch = require('node-fetch'); // Node v18+ da shart emas
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,14 +28,38 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.static(path.join(__dirname, 'public')));
 
-const CONCISE_INSTRUCTION = 
-    "Siz foydali AI yordamchisiz. Javoblaringiz juda QISQA, LO'NDA va ANIQ bo'lsin. " +
-    "Eng muhimi: Javobingizni har doim mavzuga mos EMOJILAR bilan bezang. 🎨✨";
+const SYSTEM_INSTRUCTION = 
+    "Siz foydali va aqlli AI yordamchisiz.\n" +
+    "1. Javoblaringiz lo'nda va aniq bo'lsin.\n" +
+    "2. Mavzuga mos EMOJILAR ishlating. 🎨✨\n" +
+    "3. KOD yozsangiz, albatta Markdown (```language) formatida yozing.\n" +
+    "4. Kod ichida qisqa izohlar bo'lsin.";
 
 // --- HELPERS ---
+async function checkAndIncrementLimit(userId, limit = 3) {
+    const today = new Date().toISOString().split('T')[0];
+    try {
+        const res = await pool.query(
+            "SELECT vision_count FROM daily_limits WHERE user_id = $1 AND usage_date = $2",
+            [userId, today]
+        );
+        const currentCount = res.rows[0]?.vision_count || 0;
+
+        if (currentCount >= limit) return false;
+
+        await pool.query(`
+            INSERT INTO daily_limits (user_id, usage_date, vision_count)
+            VALUES ($1, $2, 1)
+            ON CONFLICT (user_id, usage_date) 
+            DO UPDATE SET vision_count = daily_limits.vision_count + 1
+        `, [userId, today]);
+        return true;
+    } catch (e) { return true; }
+}
+
 async function getGPTTitle(text) {
     try {
-        const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        const response = await fetch("[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -43,15 +68,14 @@ async function getGPTTitle(text) {
             body: JSON.stringify({
                 model: "gpt-4o-mini",
                 messages: [
-                    { role: "system", content: "Siz sarlavha generatorisiz. Faqat sarlavhani qaytar." },
-                    { role: "user", content: `Matnga mos 2-3 so'zli qisqa nom ber: "${text.substring(0, 300)}"` }
+                    { role: "system", content: "Sarlavha generatorisan. Faqat 2-3 so'zli nom qaytar." },
+                    { role: "user", content: `Matnga sarlavha: "${text.substring(0, 100)}"` }
                 ],
                 max_tokens: 15
             })
         });
         const data = await response.json();
-        let title = data.choices?.[0]?.message?.content || "Yangi suhbat";
-        return title.replace(/['"_`*#]/g, '').trim();
+        return data.choices?.[0]?.message?.content?.replace(/['"_`*#]/g, '').trim() || "Yangi suhbat";
     } catch (e) { return "Suhbat"; }
 }
 
@@ -64,13 +88,9 @@ async function extractTextFromImage(buffer) {
         formData.append('language', 'eng');
         formData.append('isOverlayRequired', 'false');
 
-        const response = await fetch("https://api.ocr.space/parse/image", { 
-            method: "POST", 
-            body: formData,
-            headers: formData.getHeaders(),
-            duplex: 'half'
+        const response = await fetch("[https://api.ocr.space/parse/image](https://api.ocr.space/parse/image)", { 
+            method: "POST", body: formData, headers: formData.getHeaders()
         });
-
         const data = await response.json();
         if (data.IsErroredOnProcessing) return null;
         return data.ParsedResults?.[0]?.ParsedText?.trim() || null;
@@ -78,7 +98,6 @@ async function extractTextFromImage(buffer) {
 }
 
 // --- API ROUTES ---
-
 app.get('/api/sessions/:userId', async (req, res) => {
     try {
         const result = await pool.query("SELECT * FROM chat_sessions WHERE user_id = $1 ORDER BY updated_at DESC", [req.params.userId]);
@@ -98,106 +117,106 @@ app.delete('/api/session/:sessionId', async (req, res) => {
     catch (err) { res.status(500).json({ error: "DB error" }); }
 });
 
-// --- STREAMING CHAT ENDPOINT (REAL VAQT) ---
 app.post('/api/chat', upload.single('file'), async (req, res) => {
-    // 1. Javobni Stream (SSE) formatida tayyorlaymiz
     res.setHeader('Content-Type', 'text/event-stream');
     res.setHeader('Cache-Control', 'no-cache');
     res.setHeader('Connection', 'keep-alive');
 
+    // Stop tugmasi uchun Controller
+    const controller = new AbortController();
+    req.on('close', () => {
+        controller.abort();
+        res.end();
+    });
+
     try {
-        const { userId, type, message } = req.body;
+        const { userId, type, message, analysisType } = req.body;
         let { sessionId } = req.body;
         let isNewSession = false;
 
-        // 2. Sessiya tekshiruvi
-        if (!sessionId || sessionId === 'null') {
+        if (!sessionId || sessionId === 'null' || sessionId === 'undefined') {
             const newSession = await pool.query("INSERT INTO chat_sessions (user_id, title) VALUES ($1, 'Yangi suhbat') RETURNING id", [userId]);
             sessionId = newSession.rows[0].id;
             isNewSession = true;
         }
 
-        // 3. User xabarini tayyorlash
         let userContent = message || "";
+        let modelName = "gpt-4o-mini";
+
         if (type === 'image' && req.file) {
-            const ocrText = await extractTextFromImage(req.file.buffer);
-            if (ocrText) userContent = `[Rasm]: ${ocrText}\n\n(Rasm mazmuni bo'yicha javob bering)`;
-            else userContent = "[Rasm yuborildi, lekin matn aniqlanmadi]";
+            if (analysisType === 'vision') {
+                const canUse = await checkAndIncrementLimit(userId, 3);
+                if (!canUse) {
+                    res.write(`data: ${JSON.stringify({ token: "⚠️ **Limit tugadi!**\nVision (aqlli tahlil) kuniga 3 marta. 'OCR' dan foydalaning." })}\n\n`);
+                    res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+                    res.end();
+                    return;
+                }
+                const base64 = req.file.buffer.toString('base64');
+                userContent = [
+                    { type: "text", text: message || "Rasmni tahlil qil." },
+                    { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64}` } }
+                ];
+            } else {
+                const ocrText = await extractTextFromImage(req.file.buffer);
+                userContent = ocrText ? `[OCR Matn]: "${ocrText}"\n\nSavol: ${message}` : "[Matn topilmadi]";
+            }
         }
 
-        // 4. User xabarini bazaga saqlash (background)
-        pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, userContent, type]);
+        const dbContent = Array.isArray(userContent) ? JSON.stringify(userContent) : userContent;
+        await pool.query("INSERT INTO chat_messages (session_id, role, content, type) VALUES ($1, 'user', $2, $3)", [sessionId, dbContent, type]);
 
-        // 5. Tarixni olish (Context)
         const history = await pool.query("SELECT role, content FROM chat_messages WHERE session_id = $1 ORDER BY created_at ASC LIMIT 10", [sessionId]);
         
         const apiMessages = [
-            { role: "system", content: CONCISE_INSTRUCTION },
-            ...history.rows.map(m => ({ role: m.role, content: m.content })),
+            { role: "system", content: SYSTEM_INSTRUCTION },
+            ...history.rows.map(m => {
+                try {
+                    // Agar content JSON bo'lsa (vision history), uni parse qilamiz, yo'qsa string
+                    return { role: m.role, content: m.content.startsWith('[') ? JSON.parse(m.content) : m.content };
+                } catch { return { role: m.role, content: m.content }; }
+            }),
             { role: "user", content: userContent }
         ];
 
-        // 6. OpenAI Stream so'rovi
-        const openaiResponse = await fetch("https://api.openai.com/v1/chat/completions", {
+        const openaiResponse = await fetch("[https://api.openai.com/v1/chat/completions](https://api.openai.com/v1/chat/completions)", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json",
-                "Authorization": `Bearer ${OPENAI_API_KEY}`
-            },
-            body: JSON.stringify({
-                model: "gpt-4o-mini", // 4.1 mini deb so'ralgan model shu
-                messages: apiMessages,
-                stream: true, // Streamni yoqamiz
-                temperature: 0.7,
-                max_tokens: 1000
-            })
+            headers: { "Content-Type": "application/json", "Authorization": `Bearer ${OPENAI_API_KEY}` },
+            body: JSON.stringify({ model: modelName, messages: apiMessages, stream: true, max_tokens: 1500 }),
+            signal: controller.signal
         });
 
         if (!openaiResponse.ok) {
             res.write(`data: ${JSON.stringify({ error: "AI Error" })}\n\n`);
-            res.end();
-            return;
+            res.end(); return;
         }
 
-        // 7. Streamni o'qish va Clientga uzatish
-        const reader = openaiResponse.body.getReader();
-        const decoder = new TextDecoder("utf-8");
         let fullAIResponse = "";
-        let buffer = "";
-
-        while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            // Stream chunklarini yig'ish va qatorlarga bo'lish
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop(); // Oxirgi tugallanmagan qatorni saqlab qolamiz
-
+        // Node stream o'qish
+        for await (const chunk of openaiResponse.body) {
+            const lines = chunk.toString().split("\n");
             for (const line of lines) {
                 const trimmed = line.trim();
                 if (trimmed.startsWith("data: ")) {
                     const dataStr = trimmed.replace("data: ", "").trim();
                     if (dataStr === "[DONE]") continue;
-                    
                     try {
                         const json = JSON.parse(dataStr);
                         const token = json.choices[0]?.delta?.content || "";
                         if (token) {
                             fullAIResponse += token;
-                            // Har bir token (so'z/harf) ni darhol frontendga yuboramiz
                             res.write(`data: ${JSON.stringify({ token })}\n\n`);
                         }
-                    } catch (e) { }
+                    } catch (e) {}
                 }
             }
         }
 
-        // 8. Yakuniy saqlashlar
-        let newTitle = null;
         if (isNewSession) {
-            newTitle = await getGPTTitle(userContent);
+            const titleText = typeof userContent === 'string' ? userContent : (message || "Rasm tahlili");
+            const newTitle = await getGPTTitle(titleText);
             await pool.query("UPDATE chat_sessions SET title = $1 WHERE id = $2", [newTitle, sessionId]);
+            res.write(`data: ${JSON.stringify({ newTitle })}\n\n`); // Title frontendga
         }
 
         if (fullAIResponse) {
@@ -205,13 +224,14 @@ app.post('/api/chat', upload.single('file'), async (req, res) => {
             await pool.query("UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1", [sessionId]);
         }
 
-        // Tugaganligi haqida signal
-        res.write(`data: ${JSON.stringify({ done: true, sessionId, newTitle })}\n\n`);
+        res.write(`data: ${JSON.stringify({ done: true, sessionId })}\n\n`);
         res.end();
 
     } catch (error) {
-        console.error("Stream Error:", error);
-        res.write(`data: ${JSON.stringify({ error: "Server Error" })}\n\n`);
+        if (error.name !== 'AbortError') {
+            console.error(error);
+            res.write(`data: ${JSON.stringify({ error: "Server Xatosi" })}\n\n`);
+        }
         res.end();
     }
 });
