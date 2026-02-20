@@ -1,4 +1,4 @@
-// server.js (optimized, vision+ocr+stream + diagnostics)
+// server.js (optimized, vision+ocr+stream + diagnostics + telegram webhook)
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -22,9 +22,11 @@ const PORT = process.env.PORT || 3000;
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const OCR_API_KEY = process.env.OCR_API_KEY;
 const DATABASE_URL = process.env.DATABASE_URL;
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 if (!OPENAI_API_KEY) console.error("❌ MISSING: OPENAI_API_KEY");
 if (!DATABASE_URL) console.error("❌ MISSING: DATABASE_URL");
+if (!TELEGRAM_BOT_TOKEN) console.error("❌ MISSING: TELEGRAM_BOT_TOKEN — bot ishlamaydi");
 
 // Postgres pool
 const pool = new Pool({
@@ -180,6 +182,68 @@ app.get('/api/test-openai', async (req, res) => {
   } catch (e) {
     console.error("test-openai error:", e);
     return res.status(500).json({ ok: false, error: String(e) });
+  }
+});
+
+// ----------------- TELEGRAM WEBHOOK -----------------
+
+// Webhook endpoint - Telegram xabarlarini qabul qilish
+app.post('/webhook', async (req, res) => {
+  try {
+    const update = req.body;
+    
+    // Faqat xabarlarni qayta ishlaymiz
+    if (update.message && update.message.text) {
+      const chatId = update.message.chat.id;
+      const text = update.message.text;
+
+      // /start komandasiga javob
+      if (text === '/start') {
+        // Mini App URL'ini aniqlash (Railway avtomatik yoki host orqali)
+        const webAppUrl = process.env.RAILWAY_STATIC_URL || `https://${req.headers.host}`;
+        
+        // Inline keyboard tugmasi (Mini App ochish)
+        const replyMarkup = {
+          inline_keyboard: [
+            [{ text: "🚀 Mini Appni ochish", web_app: { url: webAppUrl } }]
+          ]
+        };
+
+        // Telegram API orqali xabar yuborish
+        const telegramApiUrl = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+        const response = await fetch(telegramApiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: chatId,
+            text: "Assalomu alaykum! Mini App orqali davom eting.",
+            reply_markup: replyMarkup
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Telegram API error:', response.status, errorText);
+        }
+      }
+    }
+
+    // Telegramga 200 OK qaytarish
+    res.sendStatus(200);
+  } catch (error) {
+    console.error('Webhook error:', error);
+    res.sendStatus(500);
+  }
+});
+
+// Webhook holatini tekshirish uchun qo'shimcha endpoint (ixtiyoriy)
+app.get('/webhook-info', async (req, res) => {
+  try {
+    const response = await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/getWebhookInfo`);
+    const data = await response.json();
+    res.json(data);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
   }
 });
 
